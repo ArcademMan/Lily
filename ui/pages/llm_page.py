@@ -1,0 +1,243 @@
+"""LLM configuration page: provider, models, and generation parameters."""
+
+import threading
+
+from PySide6.QtCore import Qt, Signal as QtSignal
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QLineEdit, QComboBox, QCheckBox, QSlider,
+    QPushButton, QScrollArea,
+)
+
+from ui.widgets.glass_card import GlassCard
+
+
+def _row(label_text: str, widget: QWidget) -> QHBoxLayout:
+    row = QHBoxLayout()
+    lbl = QLabel(label_text)
+    lbl.setFixedWidth(180)
+    row.addWidget(lbl)
+    row.addWidget(widget)
+    return row
+
+
+def _slider_row(label_text: str, min_val: int, max_val: int, value: int,
+                fmt=str) -> tuple[QHBoxLayout, QSlider, QLabel]:
+    row = QHBoxLayout()
+    lbl = QLabel(label_text)
+    lbl.setFixedWidth(180)
+    row.addWidget(lbl)
+    slider = QSlider(Qt.Orientation.Horizontal)
+    slider.setRange(min_val, max_val)
+    slider.setValue(value)
+    row.addWidget(slider)
+    val_label = QLabel(fmt(value))
+    val_label.setFixedWidth(40)
+    slider.valueChanged.connect(lambda v: val_label.setText(fmt(v)))
+    row.addWidget(val_label)
+    return row, slider, val_label
+
+
+def _section_title(text: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setStyleSheet("color: #aaa; font-size: 12px; font-weight: 600;")
+    return lbl
+
+
+class LLMPage(QWidget):
+    _ollama_models_ready = QtSignal(list)
+    _ollama_status_ready = QtSignal(bool)
+
+    def __init__(self, config, assistant, parent=None):
+        super().__init__(parent)
+        self._config = config
+        self._assistant = assistant
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(24, 20, 24, 20)
+
+        title = QLabel("Configurazione LLM")
+        title.setObjectName("sectionTitle")
+        outer.addWidget(title)
+        outer.addSpacing(12)
+
+        # scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        container = QWidget()
+        form = QVBoxLayout(container)
+        form.setSpacing(14)
+        scroll.setWidget(container)
+        outer.addWidget(scroll)
+
+        # ── Card: Provider ────────────────────────────────────────
+        form.addWidget(_section_title("Provider"))
+        form.addSpacing(4)
+
+        provider_card = GlassCard()
+        pc = provider_card.body()
+        pc.setSpacing(10)
+
+        self._provider = QComboBox()
+        self._provider.addItems(["ollama", "anthropic"])
+        self._provider.setCurrentText(config.provider)
+        self._provider.currentTextChanged.connect(self._on_provider_changed)
+        pc.addLayout(_row("Provider", self._provider))
+
+        # ollama fields
+        self._ollama_model = QComboBox()
+        self._ollama_model.setEditable(True)
+        self._ollama_model.setCurrentText(config.ollama_model)
+        self._ollama_row = _row("Modello Ollama", self._ollama_model)
+        pc.addLayout(self._ollama_row)
+        self._fetch_ollama_models()
+
+        self._ollama_status = QLabel("")
+        self._ollama_status.setFixedHeight(20)
+        self._ollama_status_row = _row("Stato Ollama", self._ollama_status)
+        pc.addLayout(self._ollama_status_row)
+        self._check_ollama_status()
+
+        # anthropic fields
+        self._api_key = QLineEdit(config.anthropic_api_key)
+        self._api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._api_key_row = _row("API Key Anthropic", self._api_key)
+        pc.addLayout(self._api_key_row)
+
+        self._anthropic_model = QComboBox()
+        self._anthropic_model.addItems([
+            "claude-haiku-4-5-20251001",
+            "claude-sonnet-4-6-20250514",
+        ])
+        self._anthropic_model.setCurrentText(config.anthropic_model)
+        self._anthropic_model_row = _row("Modello Anthropic", self._anthropic_model)
+        pc.addLayout(self._anthropic_model_row)
+
+        max_res_row, self._max_results, self._mr_label = _slider_row(
+            "Max risultati (Anthropic)", 1, 30, config.anthropic_max_results)
+        self._max_results_row = max_res_row
+        pc.addLayout(max_res_row)
+
+        form.addWidget(provider_card)
+        form.addSpacing(8)
+
+        # ── Card: Parametri generazione ───────────────────────────
+        form.addWidget(_section_title("Parametri generazione"))
+        form.addSpacing(4)
+
+        gen_card = GlassCard()
+        gc = gen_card.body()
+        gc.setSpacing(10)
+
+        self._thinking = QCheckBox("Abilita ragionamento esteso")
+        self._thinking.setChecked(config.thinking_enabled)
+        gc.addWidget(self._thinking)
+
+        np_row, self._num_predict, self._np_label = _slider_row(
+            "Num Predict", 32, 512, config.num_predict)
+        gc.addLayout(np_row)
+
+        cnp_row, self._chat_num_predict, self._cnp_label = _slider_row(
+            "Chat Num Predict", 64, 1024, config.chat_num_predict)
+        gc.addLayout(cnp_row)
+
+        hist_row, self._chat_max_history, self._hist_label = _slider_row(
+            "Storico chat", 1, 20, config.chat_max_history)
+        gc.addLayout(hist_row)
+
+        form.addWidget(gen_card)
+
+        form.addStretch()
+
+        # ── save / status ─────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        self._status = QLabel("")
+        self._status.setStyleSheet("color: #4CAF50; font-size: 12px;")
+        btn_row.addWidget(self._status)
+        save_btn = QPushButton("Salva")
+        save_btn.setFixedWidth(120)
+        save_btn.clicked.connect(self._save)
+        btn_row.addWidget(save_btn)
+        outer.addSpacing(8)
+        outer.addLayout(btn_row)
+
+        self._on_provider_changed(config.provider)
+
+    # ── helpers ───────────────────────────────────────────────────
+    def _check_ollama_status(self):
+        self._ollama_status_ready.connect(self._update_ollama_status)
+
+        def _check():
+            try:
+                from core.llm.ollama_provider import OllamaProvider
+                ok = OllamaProvider().check()
+            except Exception:
+                ok = False
+            self._ollama_status_ready.emit(ok)
+
+        threading.Thread(target=_check, daemon=True).start()
+
+    def _update_ollama_status(self, connected: bool):
+        if connected:
+            self._ollama_status.setText("Connesso")
+            self._ollama_status.setStyleSheet("color: #4CAF50; font-weight: bold;")
+        else:
+            self._ollama_status.setText("Non connesso")
+            self._ollama_status.setStyleSheet("color: #F44336; font-weight: bold;")
+
+    def _fetch_ollama_models(self):
+        self._ollama_models_ready.connect(self._populate_ollama_models)
+
+        def _fetch():
+            try:
+                from core.llm.ollama_provider import OllamaProvider
+                models = OllamaProvider().get_models()
+            except Exception:
+                models = []
+            self._ollama_models_ready.emit(models)
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _populate_ollama_models(self, models: list):
+        current = self._ollama_model.currentText()
+        self._ollama_model.blockSignals(True)
+        self._ollama_model.clear()
+        for m in models:
+            self._ollama_model.addItem(m)
+        self._ollama_model.setCurrentText(current)
+        self._ollama_model.blockSignals(False)
+
+    def _on_provider_changed(self, provider: str):
+        is_ollama = provider == "ollama"
+        self._set_row_visible(self._ollama_row, is_ollama)
+        self._set_row_visible(self._ollama_status_row, is_ollama)
+        self._set_row_visible(self._api_key_row, not is_ollama)
+        self._set_row_visible(self._anthropic_model_row, not is_ollama)
+        self._set_row_visible(self._max_results_row, not is_ollama)
+
+    @staticmethod
+    def _set_row_visible(layout: QHBoxLayout, visible: bool):
+        for i in range(layout.count()):
+            w = layout.itemAt(i).widget()
+            if w:
+                w.setVisible(visible)
+
+    def _save(self):
+        self._config.provider = self._provider.currentText()
+        self._config.ollama_model = self._ollama_model.currentText().strip()
+        self._config.anthropic_api_key = self._api_key.text().strip()
+        self._config.anthropic_model = self._anthropic_model.currentText()
+        self._config.anthropic_max_results = self._max_results.value()
+        self._config.thinking_enabled = self._thinking.isChecked()
+        self._config.num_predict = self._num_predict.value()
+        self._config.chat_num_predict = self._chat_num_predict.value()
+        self._config.chat_max_history = self._chat_max_history.value()
+        self._config.save()
+
+        self._assistant.apply_config()
+
+        self._status.setText("Salvato!")
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(2000, lambda: self._status.setText(""))

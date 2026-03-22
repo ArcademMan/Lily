@@ -12,6 +12,8 @@ from core.actions.media import MediaAction
 from core.actions.window_action import WindowAction
 from core.actions.type_action import TypeInAction
 from core.actions.screen_read import ScreenReadAction
+from core.actions.self_config import SelfConfigAction
+from core.actions.notes import NotesAction
 
 _ACTIONS = {
     "open_folder": OpenFolderAction(),
@@ -28,6 +30,8 @@ _ACTIONS = {
     "window": WindowAction(),
     "type_in": TypeInAction(),
     "screen_read": ScreenReadAction(),
+    "self_config": SelfConfigAction(),
+    "notes": NotesAction(),
 }
 
 

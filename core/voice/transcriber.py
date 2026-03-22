@@ -6,10 +6,10 @@ from core.signal import Signal
 
 HALLUCINATION_FILTER = [
     "sottotitoli", "qtss", "amara.org", "sottotitolato",
-    "revisione", "traduzione", "trascrizione", "music", "applausi",
+    "revisione", "traduzione", "trascrizione", "applausi",
 ]
 
-INITIAL_PROMPT_BASE = "Apri, avvia, cerca, chiudi, cartella, volume, sito web, programma, gioco, screenshot, timer, scrivi, invia, modalità dettatura, sposta, minimizza."
+INITIAL_PROMPT_BASE = "Apri, avvia, cerca, chiudi, cartella, volume, sito web, programma, gioco, screenshot, timer, scrivi, invia, modalità dettatura, sposta, minimizza, riavviati, stop."
 INITIAL_PROMPT_EXTENDED = (
     INITIAL_PROMPT_BASE + " "
     "Elden Ring, Lethal Company, Minecraft, Fortnite, Valorant, Discord, Photoshop, "

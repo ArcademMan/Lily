@@ -23,48 +23,44 @@ Assistente vocale in italiano per Windows con pipeline: hotkey → registrazione
 
 ---
 
-## TODO — Feature e miglioramenti
+## Feature implementate
 
-### P0 — Priorità critica
+- Text-to-Speech (Edge TTS + fallback Piper locale)
+- Modalità conversazione (intent `chat` con personalità)
+- Modalità dettatura (segmenti + dettatura su finestra target)
+- Controllo multimedia (play/pausa, next, previous, stop)
+- Memoria conversazionale globale (classify_intent + chat)
+- Lista comandi in chat ("cosa puoi fare?")
+- Scrivi su finestra ("vai su X e scrivi Y e invia")
+- Lettura schermo (screenshot + OCR Tesseract + interpretazione LLM)
+- Gestione finestre (snap, sposta monitor, minimizza, ripristina, chiudi cartelle, nudge pixel)
+- Conferma vocale per azioni pericolose
+- Correzione nomi Whisper + parametri per modello
+- Ricerca intelligente (retry LLM, expand terms, fuzzy)
+- Pick con contesto (intent completo, esclusioni utente)
+- Messaggi parlabili (italiano, nomi puliti)
+- Caps Lock come hotkey (alias localizzati)
+- Chiusura programmi gentile (WM_CLOSE + fallback taskkill)
+- Stato Ollama in UI
+- Config thread-safe (RLock) + error handling JSON corrotto
+- `find_window` unificata in `core/utils/win32.py`
+- Quick notes vocali (salva, leggi, cancella note con timestamp)
 
-- [x] **Text-to-Speech**: Edge TTS come default con fallback Piper TTS (locale). Voce configurabile nei settings (`tts_voice`, `tts_enabled`). Modello Piper italiano (Paola) in `models/tts/`.
-- [x] **Modalità conversazione**: Intent `chat` aggiunto con `CHAT_SYSTEM_PROMPT`. (in corso da altro agent)
+---
 
-### P1 — Priorità alta
+## TODO — Feature da implementare
 
-- [x] **Modalità dettatura**: Intent `dictation` implementato. Trascrive a segmenti e digita al cursore via `keyboard.write()`. Auto-stop dopo silenzio prolungato. Beep sonoro di attivazione (800Hz) e disattivazione (400Hz).
-- [x] **Controllo multimedia**: Action `media` con tasti multimediali Windows (play/pausa, next, previous, stop). Funziona con qualsiasi player.
-- [x] **Memoria conversazionale**: `ConversationMemory` globale in Assistant, condivisa tra classify_intent (contesto follow-up) e ChatAction (continuità chat). L'LLM vede i comandi precedenti.
-- [x] **Lista comandi in chat**: Lily sa elencare i propri comandi disponibili quando l'utente chiede "cosa puoi fare?".
-- [x] **Scrivi su finestra**: Action `type_in` — "vai sul terminale e scrivi X e invia". Trova finestra per nome, porta in focus, digita testo, opzionalmente preme Enter.
-- [ ] **Overlay disambiguazione**: Finestrella trasparente in alto a sinistra che mostra le opzioni quando Lily è indecisa (file, cartelle, finestre). L'utente risponde a voce "il primo", "il secondo", ecc.
-- [x] **Nudge finestre**: Spostamento fine in pixel — "sposta Discord più in basso", "sposta Chrome 100 pixel a destra". Default 50px, "molto" = 200px, o pixel esatti.
+### Tier 1 — Alto impatto
+- [ ] Automazioni / Macro vocali — sequenze di azioni con un comando (es. "Modalità gaming" → chiude Teams, apre Discord, lancia Steam, volume 70%). Intent `macro` + file JSON configurabile
+- [ ] Catena di comandi in linguaggio naturale — "Apri Chrome, vai su YouTube e cerca lofi music" → decomposizione LLM in sotto-azioni sequenziali
 
-### P2 — Priorità media
+### Tier 2 — Differenziatori unici
+- [ ] Apprendimento dalle correzioni — "no, intendevo X" → salva correzione come contesto futuro per intent
+- [ ] Monitoring passivo / Watchdog — "avvisami quando il download finisce", monitor cartella/processo/CPU
+- [ ] Profili contestuali automatici — Lily rileva quale app è in primo piano e adatta i comandi
 
-- [ ] **Macro / automazioni personalizzate**: File JSON con comandi composti (es. "buongiorno" → apre Outlook + Slack + Google News). Un solo comando vocale esegue più azioni in sequenza.
-- [ ] **Note rapide**: Nuova action `note` — "segna: comprare il latte" salva in `notes.md` con timestamp. "Leggi le note di oggi" le legge via TTS.
-- [ ] **Meteo**: Nuova action `weather` con API Open-Meteo (gratis, no API key). "Che tempo fa?" / "Pioverà domani?" con città configurabile.
-- [ ] **Budget alert per token**: Soglia di spesa giornaliera/mensile configurabile con notifica. Fallback automatico a Ollama quando il budget è esaurito.
-
-### P3 — Priorità bassa
-
-- [x] **Gestione finestre**: Action `window_management` con win32gui — sposta, minimizza, massimizza, mostra desktop.
-- [ ] **Clipboard manager**: Nuova action `clipboard` — "leggi la clipboard", "cerca la clipboard online", copia screenshot in clipboard.
-- [ ] **Controllo luminosità**: Nuova action `brightness` via `screen_brightness_control` — "luminosità al 50%", "abbassa la luminosità".
-- [ ] **Supporto multi-lingua**: Auto-detect lingua nel transcriber, prompt multilingua, setting per lingua preferita con opzione "auto".
-
-### Miglioramenti a feature esistenti
-
-- [x] **Correzione nomi da Whisper**: Prompt Ollama migliorato con lista errori comuni (Eldering→Elden Ring, Little Company→Lethal Company, ecc.). Initial prompt Whisper con nomi programmi/giochi.
-- [x] **Parametri Whisper per modello**: beam_size, VAD, initial_prompt variano in base al modello (tiny→large-v3).
-- [x] **Ricerca intelligente**: Retry con LLM se nessun risultato, expand_search_terms (varianti con/senza spazi), fuzzy search per parole singole.
-- [x] **Pick con contesto**: Il pick riceve intent completo + testo originale, rispetta esclusioni utente ("non su D:"), valida anche risultati singoli.
-- [x] **Messaggi parlabili**: Tutti i messaggi di ritorno in italiano e senza path (solo nomi puliti per il TTS).
-- [x] **Junk filter migliorato**: Filtrati Recent, artbook, soundtrack, debug tool, uninstall.
-- [x] **Supporto qwen3 thinking**: Flag `think: false` inviato a Ollama quando thinking è disabilitato.
-- [x] **Conferma vocale per azioni pericolose**: close_program richiede conferma vocale (TTS chiede, mic ascolta, Whisper trascrive, LLM interpreta). Timeout 7s → annulla. Set `DANGEROUS_INTENTS` espandibile.
-- [x] **Caps Lock come hotkey**: Supporto alias tasti localizzati (bloc maius/caps lock). Toggle caps forzato a OFF dopo rilascio.
-- [x] **Chiusura programmi gentile**: WM_CLOSE via `win32gui` con timeout 3s, poi fallback a `taskkill /F`.
-- [ ] **Filtro allucinazioni Whisper dinamico**: Spostare la lista in un JSON editabile. Auto-learning: se l'LLM non classifica l'intent, aggiungere la trascrizione alla lista.
-- [x] **Stato Ollama in UI**: Indicatore "Connesso"/"Non connesso" nella pagina settings, visibile solo quando provider è Ollama.
+### Tier 3 — Feature che nessun assistente ha
+- [ ] **Game Companion** — Lily vede lo schermo di gioco (screenshot + OCR), sa a cosa stai giocando, e risponde a domande specifiche: "come batto questo boss?", "dove trovo questo item?", "che quest devo fare?" — tutto a voce senza uscire dal gioco
+- [ ] **Automazione visiva** — "quando vedi la scritta X sullo schermo, avvisami" — polling periodico con OCR, notifica vocale. Monitoraggio visivo dello schermo
+- [ ] **Programmazione a voce** — "vai su VS Code, crea un nuovo file utils.py, scrivi una funzione che calcola il fattoriale" — Lily genera il codice con l'LLM e lo incolla nell'editor
+- [ ] **Multi-step visivi** — "cerca su Google Immagini un gatto e scarica la prima immagine" — azioni concatenate con feedback visivo (screenshot → OCR → decisione → azione)

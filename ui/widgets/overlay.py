@@ -1,39 +1,50 @@
-"""Animated circle indicator: idle / listening / processing."""
+"""Floating overlay: small Lily logo in bottom-right when window is hidden."""
 
 import os
+
 from PySide6.QtCore import (
-    Qt, QTimer, QPropertyAnimation, QEasingCurve, Property, QRectF,
+    Qt, QTimer, QPropertyAnimation, QEasingCurve, Property, QRectF, QPoint,
 )
-from PySide6.QtGui import QPainter, QColor, QRadialGradient, QPen, QPixmap, QPainterPath
-from PySide6.QtWidgets import QWidget
+from PySide6.QtGui import QPainter, QColor, QPen, QPixmap, QPainterPath
+from PySide6.QtWidgets import QWidget, QApplication
 
 _ACCENT = QColor("#7C5CFC")
-_ACCENT_DIM = QColor(124, 92, 252, 60)
-_SIZE = 160
+_SIZE = 64
+_MARGIN = 20
 
 
-class StateIndicator(QWidget):
-    """Custom-painted animated state indicator."""
+class LilyOverlay(QWidget):
+    """Tiny always-on-top overlay with animated state feedback."""
 
-    def __init__(self, parent=None):
+    def __init__(self, config, parent=None):
         super().__init__(parent)
-        self.setFixedSize(_SIZE, _SIZE)
+        self._config = config
         self._state = "idle"
+        self._main_window_visible = True
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setFixedSize(_SIZE, _SIZE)
+
+        # load circular icon
+        icon_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "assets", "lily.png",
+        )
+        self._icon = self._make_circle_icon(icon_path, 44)
 
         # animatable properties
         self._pulse = 0.0
         self._arc_angle = 0.0
 
-        # load icon (cropped to circle)
-        icon_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            "assets", "lily.png",
-        )
-        self._icon = self._make_circle_icon(icon_path, 100)
-
         # pulse animation (listening)
         self._pulse_anim = QPropertyAnimation(self, b"pulse", self)
-        self._pulse_anim.setDuration(1000)
+        self._pulse_anim.setDuration(1200)
         self._pulse_anim.setStartValue(0.0)
         self._pulse_anim.setEndValue(1.0)
         self._pulse_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
@@ -49,26 +60,14 @@ class StateIndicator(QWidget):
         # repaint timer
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.update)
-        if self.isVisible():
-            self._timer.start(16)  # ~60 fps
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        self._timer.start(16)
-
-    def hideEvent(self, event):
-        super().hideEvent(event)
-        self._timer.stop()
 
     @staticmethod
     def _make_circle_icon(path: str, size: int) -> QPixmap:
-        """Carica un'immagine e la ritaglia a cerchio."""
         src = QPixmap(path).scaled(
             size, size,
             Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
-        # Centra se non è quadrata dopo lo scaling
         if src.width() != size or src.height() != size:
             x = (src.width() - size) // 2
             y = (src.height() - size) // 2
@@ -76,7 +75,6 @@ class StateIndicator(QWidget):
 
         result = QPixmap(size, size)
         result.fill(Qt.GlobalColor.transparent)
-
         painter = QPainter(result)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         clip = QPainterPath()
@@ -103,7 +101,11 @@ class StateIndicator(QWidget):
 
     arc_angle = Property(float, _get_arc_angle, _set_arc_angle)
 
-    # ── public API ────────────────────────────────────────────────
+    # ── visibility logic ──────────────────────────────────────────
+    def set_main_window_visible(self, visible: bool):
+        self._main_window_visible = visible
+        self._update_visibility()
+
     def set_state(self, state: str):
         if state == self._state:
             return
@@ -117,56 +119,61 @@ class StateIndicator(QWidget):
             self._pulse_anim.start()
         elif state in ("processing", "loading"):
             self._arc_anim.start()
-        self.update()
+
+        self._update_visibility()
+
+    def _update_visibility(self):
+        should_show = (
+            self._config.overlay_enabled
+            and not self._main_window_visible
+            and self._state != "idle"
+        )
+        if should_show and not self.isVisible():
+            self._position_bottom_right()
+            self.show()
+            self._timer.start(16)
+        elif not should_show and self.isVisible():
+            self.hide()
+            self._timer.stop()
+
+    def _position_bottom_right(self):
+        screen = QApplication.primaryScreen()
+        if screen:
+            geo = screen.availableGeometry()
+            x = geo.right() - _SIZE - _MARGIN
+            y = geo.bottom() - _SIZE - _MARGIN
+            self.move(x, y)
 
     # ── painting ──────────────────────────────────────────────────
     def paintEvent(self, _event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         cx, cy = _SIZE / 2, _SIZE / 2
-        r = _SIZE / 2 - 10
+        r = _SIZE / 2
 
-        # background glow
-        grad = QRadialGradient(cx, cy, r)
-        if self._state == "idle":
-            grad.setColorAt(0, QColor(124, 92, 252, 25))
-            grad.setColorAt(1, QColor(124, 92, 252, 0))
-        elif self._state == "listening":
-            alpha = int(25 + 40 * self._pulse)
-            grad.setColorAt(0, QColor(124, 92, 252, alpha))
-            grad.setColorAt(1, QColor(124, 92, 252, 0))
-        else:
-            grad.setColorAt(0, QColor(124, 92, 252, 35))
-            grad.setColorAt(1, QColor(124, 92, 252, 0))
-        p.setBrush(grad)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawEllipse(QRectF(10, 10, r * 2, r * 2))
+        # dark circle background
+        p.setBrush(QColor(25, 25, 35, 220))
+        p.setPen(QPen(QColor(124, 92, 252, 80), 2))
+        p.drawEllipse(QRectF(2, 2, _SIZE - 4, _SIZE - 4))
 
-        # main circle
-        p.setBrush(QColor(30, 30, 45, 200))
-        pen = QPen(_ACCENT_DIM, 2)
-        p.setPen(pen)
-        inner_r = 50
-        p.drawEllipse(QRectF(cx - inner_r, cy - inner_r, inner_r * 2, inner_r * 2))
-
-        # listening: pulsing rings
+        # listening: expanding rings
         if self._state == "listening":
-            for i in range(3):
-                offset = (self._pulse + i * 0.33) % 1.0
-                ring_r = inner_r + offset * 25
-                alpha = int(120 * (1.0 - offset))
+            for i in range(2):
+                offset = (self._pulse + i * 0.5) % 1.0
+                ring_r = r - 2 + offset * 12
+                alpha = int(140 * (1.0 - offset))
                 ring_pen = QPen(QColor(124, 92, 252, alpha), 2)
                 p.setPen(ring_pen)
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.drawEllipse(QRectF(cx - ring_r, cy - ring_r, ring_r * 2, ring_r * 2))
 
         # processing: rotating arc
-        if self._state == "processing":
+        if self._state in ("processing", "loading"):
             arc_pen = QPen(_ACCENT, 3)
             arc_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             p.setPen(arc_pen)
             p.setBrush(Qt.BrushStyle.NoBrush)
-            arc_r = inner_r + 10
+            arc_r = r - 1
             rect = QRectF(cx - arc_r, cy - arc_r, arc_r * 2, arc_r * 2)
             start = int(self._arc_angle * 16)
             p.drawArc(rect, start, 90 * 16)

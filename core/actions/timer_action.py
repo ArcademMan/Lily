@@ -20,12 +20,19 @@ class _TimerNotifier:
 
 
 class TimerAction(Action):
+    _active_timers: dict[str, threading.Timer] = {}
+    _lock = threading.Lock()
+
     def execute(self, intent: dict, config) -> str:
-        parameter = intent.get("parameter", "").strip()
+        parameter = intent.get("parameter", "").strip().lower()
+
+        # Cancellazione timer
+        if parameter in ("cancel", "cancella", "togli", "rimuovi", "stop"):
+            return self._cancel_all()
 
         seconds = self._parse_duration(parameter)
         if seconds <= 0:
-            return f"Invalid timer duration: '{parameter}'"
+            return f"Durata timer non valida: '{parameter}'"
 
         label = intent.get("query", "").strip() or "Timer"
         human_duration = self._format_duration(seconds)
@@ -33,14 +40,34 @@ class TimerAction(Action):
         def on_timer():
             winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
             notifier = _TimerNotifier.instance()
-            notifier.notify.emit(f"Timer finished: {human_duration} - {label}")
+            notifier.notify.emit(f"Timer scaduto: {human_duration} - {label}")
+            with self._lock:
+                self._active_timers.pop(timer_id, None)
 
+        timer_id = f"{label}_{seconds}"
         timer = threading.Timer(seconds, on_timer)
         timer.daemon = True
         timer.start()
 
-        print(f"[Timer] Set: {human_duration} - '{label}'")
-        return f"Timer set: {human_duration}"
+        with self._lock:
+            # Cancella timer precedente con stesso id
+            old = self._active_timers.pop(timer_id, None)
+            if old:
+                old.cancel()
+            self._active_timers[timer_id] = timer
+
+        print(f"[Timer] Impostato: {human_duration} - '{label}'")
+        return f"Timer impostato: {human_duration}."
+
+    def _cancel_all(self) -> str:
+        with self._lock:
+            count = len(self._active_timers)
+            for t in self._active_timers.values():
+                t.cancel()
+            self._active_timers.clear()
+        if count == 0:
+            return "Nessun timer attivo."
+        return f"Rimossi {count} timer." if count > 1 else "Timer rimosso."
 
     @staticmethod
     def _parse_duration(text: str) -> int:

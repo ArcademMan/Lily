@@ -4,12 +4,15 @@ from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QIcon, QPainter, QColor
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QStackedWidget, QLabel, QPushButton, QSizePolicy,
+    QLabel, QPushButton, QSizePolicy,
 )
 
 from ui.style import enable_blur, BG
+from ui.widgets.animated_stack import AnimatedStack
+from ui.widgets.overlay import LilyOverlay
 from ui.widgets.sidebar import Sidebar
 from ui.pages.voice_page import VoicePage
+from ui.pages.llm_page import LLMPage
 from ui.pages.settings_page import SettingsPage
 from ui.pages.dashboard_page import DashboardPage
 from ui.pages.log_page import LogPage
@@ -33,6 +36,13 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._center()
+
+        # Overlay
+        self._overlay = LilyOverlay(config)
+        bridge.state_changed.connect(self._overlay.set_state)
+
+        # Listener per riavvio — intercetta il segnale "__RESTART__" nel main thread Qt
+        bridge.notify.connect(self._on_notify_restart)
 
     def _build_ui(self):
         central = QWidget(self)
@@ -77,13 +87,15 @@ class MainWindow(QMainWindow):
         self._sidebar.page_selected.connect(self._switch_page)
         body_layout.addWidget(self._sidebar)
 
-        self._stack = QStackedWidget()
-        self._voice_page = VoicePage(self.bridge)
+        self._stack = AnimatedStack()
+        self._voice_page = VoicePage(self.bridge, config=self.config)
+        self._llm_page = LLMPage(self.config, self.assistant)
         self._settings_page = SettingsPage(self.config, self.assistant)
         self._dashboard_page = DashboardPage(config=self.config)
         self._log_page = LogPage(self.bridge)
 
         self._stack.addWidget(self._voice_page)
+        self._stack.addWidget(self._llm_page)
         self._stack.addWidget(self._settings_page)
         self._stack.addWidget(self._dashboard_page)
         self._stack.addWidget(self._log_page)
@@ -93,7 +105,9 @@ class MainWindow(QMainWindow):
 
     def _switch_page(self, index: int):
         self._stack.setCurrentIndex(index)
-        if index == 2:
+        if index == 0:
+            self._voice_page._update_provider_warning()
+        elif index == 3:
             self._dashboard_page.refresh()
 
     def _center(self):
@@ -131,20 +145,40 @@ class MainWindow(QMainWindow):
         self.activateWindow()
         self.raise_()
 
+    def _on_notify_restart(self, msg: str):
+        if msg == "__RESTART__":
+            print("[Restart] Chiusura pulita dal main thread Qt...")
+            self._allow_close = True
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().quit()
+
     def allow_close(self):
         self._allow_close = True
         self.close()
 
     def closeEvent(self, event):
         if self._allow_close:
+            self._overlay.hide()
             event.accept()
         else:
             event.ignore()
             self.hide()
+            self._overlay.set_main_window_visible(False)
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._overlay.set_main_window_visible(True)
         try:
             enable_blur(int(self.winId()))
         except Exception:
             pass
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._overlay.set_main_window_visible(False)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == event.Type.WindowStateChange:
+            minimized = bool(self.windowState() & Qt.WindowState.WindowMinimized)
+            self._overlay.set_main_window_visible(not minimized)

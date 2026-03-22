@@ -1,21 +1,50 @@
 """Vertical icon sidebar for page navigation."""
 
+import os
+
 import qtawesome as qta
 from PySide6.QtCore import Signal, Qt, QSize
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QPainterPath
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel
 
 
 _PAGES = [
     ("mdi6.microphone",       "Voce"),
+    ("mdi6.brain",            "LLM"),
     ("mdi6.cog-outline",      "Impostazioni"),
-    ("mdi6.chart-bar",        "Dashboard"),
+    ("mdi6.chart-bar",        "Usage"),
     ("mdi6.text-box-outline", "Log"),
 ]
 
 _ICON_SIZE = QSize(22, 22)
 _ICON_COLOR = "#EAEAEA"
 _ICON_ACTIVE = "#7C5CFC"
+
+_LOGO_SIZE = 32
+
+
+def _make_circle_pixmap(path: str, size: int) -> QPixmap:
+    """Carica un'immagine e la ritaglia a cerchio."""
+    src = QPixmap(path).scaled(
+        size, size,
+        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    if src.width() != size or src.height() != size:
+        x = (src.width() - size) // 2
+        y = (src.height() - size) // 2
+        src = src.copy(x, y, size, size)
+
+    result = QPixmap(size, size)
+    result.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(result)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    clip = QPainterPath()
+    clip.addEllipse(0, 0, size, size)
+    painter.setClipPath(clip)
+    painter.drawPixmap(0, 0, src)
+    painter.end()
+    return result
 
 
 class SidebarButton(QPushButton):
@@ -54,9 +83,24 @@ class Sidebar(QWidget):
         self.setStyleSheet("background: rgba(15, 15, 25, 220); border-radius: 0;")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(7, 16, 7, 16)
+        layout.setContentsMargins(7, 12, 7, 16)
         layout.setSpacing(6)
 
+        # ── Logo Lily ─────────────────────────────────────────────
+        icon_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "assets", "lily.png",
+        )
+        logo = QLabel()
+        logo.setFixedSize(48, 48)
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo.setStyleSheet("background: transparent;")
+        pixmap = _make_circle_pixmap(icon_path, _LOGO_SIZE)
+        logo.setPixmap(pixmap)
+        layout.addWidget(logo, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addSpacing(8)
+
+        # ── Navigation buttons ────────────────────────────────────
         self._buttons: list[SidebarButton] = []
         for idx, (icon, tip) in enumerate(_PAGES):
             btn = SidebarButton(icon, tip, self)

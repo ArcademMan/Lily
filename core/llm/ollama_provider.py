@@ -36,9 +36,9 @@ class OllamaProvider(LLMProvider):
         # Disable thinking for models that support it (e.g. qwen3)
         # when not explicitly enabled — prevents wasting tokens on <think> blocks
         if not thinking:
-            payload["options"]["num_ctx"] = payload["options"].get("num_ctx", 4096)
-            # Ollama uses 'think' option to control thinking in supported models
             payload["think"] = False
+        # Assicura che il context window sia abbastanza grande per il prompt
+        payload["options"]["num_ctx"] = 8192
         r = requests.post(f"{OLLAMA_BASE}/api/chat", json=payload, timeout=timeout)
         r.raise_for_status()
         data = r.json()
@@ -46,5 +46,8 @@ class OllamaProvider(LLMProvider):
         prompt_tokens = data.get("prompt_eval_count", 0)
         completion_tokens = data.get("eval_count", 0)
         print(f"[Tokens] prompt={prompt_tokens} completion={completion_tokens} totale={prompt_tokens + completion_tokens}")
+
+        from core.llm.token_tracker import TokenTracker
+        TokenTracker().track(model, prompt_tokens, completion_tokens)
 
         return data.get("message", {}).get("content", "").strip()

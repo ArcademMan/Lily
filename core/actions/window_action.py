@@ -6,6 +6,7 @@ import ctypes.wintypes
 import keyboard as kb
 
 from core.actions.base import Action
+from core.utils.win32 import get_windows, find_window
 
 user32 = ctypes.windll.user32
 
@@ -25,65 +26,6 @@ class _MONITORINFO(ctypes.Structure):
     _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", _RECT),
                 ("rcWork", _RECT), ("dwFlags", ctypes.c_ulong)]
 
-
-def _get_windows(include_minimized: bool = False) -> list[dict]:
-    """Enumera finestre con titolo. Se include_minimized, include anche quelle minimizzate."""
-    windows = []
-
-    def callback(hwnd, _):
-        # Controlla se la finestra ha un titolo
-        length = user32.GetWindowTextLengthW(hwnd)
-        if length == 0:
-            return True
-
-        visible = user32.IsWindowVisible(hwnd)
-        minimized = user32.IsIconic(hwnd)
-
-        if not visible and not minimized:
-            return True
-        if minimized and not include_minimized:
-            return True
-
-        buf = ctypes.create_unicode_buffer(length + 1)
-        user32.GetWindowTextW(hwnd, buf, length + 1)
-        cls_buf = ctypes.create_unicode_buffer(256)
-        user32.GetClassNameW(hwnd, cls_buf, 256)
-        windows.append({
-            "hwnd": hwnd,
-            "title": buf.value,
-            "class": cls_buf.value,
-            "minimized": bool(minimized),
-        })
-        return True
-
-    WNDENUMPROC = ctypes.WINFUNCTYPE(
-        ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM
-    )
-    user32.EnumWindows(WNDENUMPROC(callback), 0)
-    return windows
-
-
-def _find_window(query: str, include_minimized: bool = False,
-                 search_terms: list[str] = None) -> dict | None:
-    """Trova una finestra il cui titolo contiene la query o uno dei search_terms."""
-    candidates = [query]
-    if search_terms:
-        candidates.extend(search_terms)
-    # Aggiungi sottostringhe
-    words = query.split()
-    if len(words) > 1:
-        for i in range(len(words)):
-            sub = " ".join(words[i:])
-            if sub not in candidates:
-                candidates.append(sub)
-
-    windows = _get_windows(include_minimized=include_minimized)
-    for term in candidates:
-        term_lower = term.lower()
-        for w in windows:
-            if term_lower in w["title"].lower():
-                return w
-    return None
 
 
 def _get_monitors() -> list[_RECT]:
@@ -135,7 +77,7 @@ class WindowAction(Action):
 
     def _close_explorer(self) -> str:
         closed = 0
-        for w in _get_windows():
+        for w in get_windows():
             if w["class"] == "CabinetWClass":
                 user32.PostMessageW(w["hwnd"], WM_CLOSE, 0, 0)
                 closed += 1
@@ -147,7 +89,7 @@ class WindowAction(Action):
         if not query:
             return "Non hai specificato quale finestra spostare."
 
-        target = _find_window(query, search_terms=terms)
+        target = find_window(query, search_terms=terms)
         if not target:
             return f"Non trovo la finestra {query}."
 
@@ -178,7 +120,7 @@ class WindowAction(Action):
         if not query:
             return "Non hai specificato quale finestra spostare."
 
-        target = _find_window(query, include_minimized=True, search_terms=terms)
+        target = find_window(query, include_minimized=True, search_terms=terms)
         if not target:
             return f"Non trovo la finestra {query}."
 
@@ -219,7 +161,7 @@ class WindowAction(Action):
         if not query:
             return "Non hai specificato quale finestra ripristinare."
 
-        target = _find_window(query, include_minimized=True, search_terms=terms)
+        target = find_window(query, include_minimized=True, search_terms=terms)
         if not target:
             return f"Non trovo la finestra {query}."
 
@@ -233,7 +175,7 @@ class WindowAction(Action):
         if not query:
             return "Non hai specificato quale finestra minimizzare."
 
-        target = _find_window(query, search_terms=terms)
+        target = find_window(query, search_terms=terms)
         if not target:
             return f"Non trovo la finestra {query}."
 
@@ -244,7 +186,7 @@ class WindowAction(Action):
         if not query:
             return "Non hai specificato quale finestra spostare."
 
-        target = _find_window(query, search_terms=terms)
+        target = find_window(query, search_terms=terms)
         if not target:
             return f"Non trovo la finestra {query}."
 
@@ -282,7 +224,7 @@ class WindowAction(Action):
     def _close_all(self) -> str:
         skip_classes = {"Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Progman", "WorkerW"}
         closed = 0
-        for w in _get_windows():
+        for w in get_windows():
             if w["class"] in skip_classes:
                 continue
             if "lily" in w["title"].lower():

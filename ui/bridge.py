@@ -10,6 +10,7 @@ class SignalBridge(QObject):
     state_changed = QtSignal(str)
     result_ready = QtSignal(str, str)
     notify = QtSignal(str)
+    detail = QtSignal(str)
     log_line = QtSignal(str)
 
     def __init__(self, assistant, parent=None):
@@ -17,3 +18,4 @@ class SignalBridge(QObject):
         assistant.state_changed.connect(lambda s: self.state_changed.emit(s))
         assistant.result_ready.connect(lambda t, r: self.result_ready.emit(t, r))
         assistant.notify.connect(lambda m: self.notify.emit(m))
+        assistant.detail.connect(lambda d: self.detail.emit(d))

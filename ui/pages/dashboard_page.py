@@ -5,7 +5,7 @@ import threading
 from PySide6.QtCore import Qt, QTimer, QRectF, Signal as QtSignal
 from PySide6.QtGui import QPainter, QColor, QFont
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout, QSizePolicy,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout, QSizePolicy, QComboBox,
 )
 
 from ui.widgets.glass_card import GlassCard
@@ -91,9 +91,22 @@ class DashboardPage(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)
 
-        title = QLabel("Dashboard")
+        title_row = QHBoxLayout()
+        title = QLabel("Usage")
         title.setObjectName("sectionTitle")
-        outer.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch()
+
+        self._provider_combo = QComboBox()
+        self._provider_combo.addItems(["Ollama", "Anthropic"])
+        # Default al provider attualmente in uso
+        current = config.provider if config else "ollama"
+        self._provider_combo.setCurrentText("Anthropic" if current == "anthropic" else "Ollama")
+        self._provider_combo.currentTextChanged.connect(lambda _: self.refresh())
+        self._provider_combo.setFixedWidth(140)
+        title_row.addWidget(self._provider_combo)
+
+        outer.addLayout(title_row)
         outer.addSpacing(12)
 
         # ── session stats ─────────────────────────────────────────
@@ -163,18 +176,34 @@ class DashboardPage(QWidget):
         self._services_ready.connect(self._update_services)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.refresh)
+        self._timer.start(3000)
+        self.refresh()
+        self._check_services()
+
+    def showEvent(self, event):
+        super().showEvent(event)
         self._timer.start(5000)
         self.refresh()
         self._check_services()
 
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._timer.stop()
+
+    def _selected_provider(self) -> str:
+        return "anthropic" if self._provider_combo.currentText() == "Anthropic" else "ollama"
+
     def refresh(self):
         t = self._tracker
-        self._s_input.set_value(f"{t.session_input:,}")
-        self._s_output.set_value(f"{t.session_output:,}")
-        self._s_cost.set_value(f"${t.session_cost:.4f}")
+        provider = self._selected_provider()
+
+        session = t.get_session(provider)
+        self._s_input.set_value(f"{session['input']:,}")
+        self._s_output.set_value(f"{session['output']:,}")
+        self._s_cost.set_value(f"${session['cost']:.4f}")
 
         # today's requests
-        sessions = t._data.get("sessions", [])
+        sessions = t.get_sessions(provider)
         from datetime import date
         today = date.today().isoformat()
         today_reqs = 0
@@ -182,8 +211,9 @@ class DashboardPage(QWidget):
             today_reqs = sessions[-1].get("requests", 0)
         self._s_reqs.set_value(str(today_reqs))
 
-        self._t_tokens.set_value(f"{t.total_input + t.total_output:,}")
-        self._t_cost.set_value(f"${t.total_cost:.4f}")
+        totals = t.get_totals(provider)
+        self._t_tokens.set_value(f"{totals['total_input'] + totals['total_output']:,}")
+        self._t_cost.set_value(f"${totals['total_cost']:.4f}")
 
         # chart data
         chart_data = [(s["date"], s.get("requests", 0)) for s in sessions]

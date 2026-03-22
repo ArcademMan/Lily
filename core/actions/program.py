@@ -1,8 +1,27 @@
 import os
+import subprocess
 
 from core.actions.base import Action
 from core.llm.brain import pick_best_result, suggest_retry_terms
 from core.search import find_program, expand_search_terms
+
+
+def _try_launch_uwp(query: str) -> str | None:
+    """Prova a lanciare un'app UWP tramite il suo AppID."""
+    try:
+        r = subprocess.run(
+            ["powershell", "-c",
+             f'Get-StartApps | Where-Object {{ $_.Name -like "*{query}*" }} | Select-Object -First 1 -ExpandProperty AppID'],
+            capture_output=True, text=True, timeout=5,
+        )
+        app_id = r.stdout.strip()
+        if app_id:
+            print(f"[Azione] App UWP trovata: {app_id}")
+            os.startfile(f"shell:AppsFolder\\{app_id}")
+            return app_id
+    except Exception as e:
+        print(f"[Azione] Errore ricerca UWP: {e}")
+    return None
 
 
 class OpenProgramAction(Action):
@@ -39,6 +58,13 @@ class OpenProgramAction(Action):
             return f"Trovati programmi ma nessuno corrisponde a '{query}'."
         target = results[idx]
         print(f"[Azione] Scelto risultato {idx}: {target}")
-        os.startfile(target)
+        try:
+            os.startfile(target)
+        except PermissionError:
+            # App UWP (WindowsApps) — prova via shell:AppsFolder
+            print(f"[Azione] Accesso negato, provo come app UWP...")
+            app_id = _try_launch_uwp(query)
+            if not app_id:
+                return f"Non riesco ad aprire {query}, accesso negato."
         name = os.path.splitext(os.path.basename(target))[0]
         return f"Avvio {name}."

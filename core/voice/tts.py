@@ -134,8 +134,19 @@ class TTSEngine:
 
         self._play_audio(audio_bytes)
 
-    @staticmethod
-    def _play_audio(audio_bytes: bytes):
+    def stop(self):
+        """Ferma immediatamente la riproduzione audio."""
+        try:
+            import pygame
+            if pygame.mixer.get_init():
+                pygame.mixer.stop()
+                print("[TTS] Fermato.")
+        except Exception:
+            pass
+        with self._lock:
+            self._speaking = False
+
+    def _play_audio(self, audio_bytes: bytes):
         """Riproduce audio in memoria tramite pygame."""
         try:
             import pygame
@@ -144,6 +155,9 @@ class TTSEngine:
             sound = pygame.mixer.Sound(io.BytesIO(audio_bytes))
             sound.play()
             while pygame.mixer.get_busy():
+                if not self._speaking:
+                    pygame.mixer.stop()
+                    break
                 pygame.time.wait(50)
         except Exception as e:
             print(f"[TTS] Errore riproduzione: {e}")

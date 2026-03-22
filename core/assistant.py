@@ -1,3 +1,4 @@
+import sys
 import threading
 import time as _time
 
@@ -5,20 +6,39 @@ from config import Config
 from core.signal import Signal
 from core.voice.hotkey import HotkeyManager
 from core.voice.listener import ListenWorker
-from core.voice.transcriber import WhisperLoader, transcribe
-from core.llm.brain import classify_intent
+from core.voice.transcriber import WhisperLoader
+from core.llm.brain import classify_intent, decompose_chain
 from core.actions import execute_action
 from core.voice.tts import TTSEngine
 from core.llm.conversation import ConversationMemory
+from core.voice.confirmation import wait_for_confirmation, get_confirm_message
+from core.voice.dictation import run_dictation, run_dictation_to_window
+from core.utils.audio import play_beep
+from core.utils.clipboard import copy_to_clipboard
 
 # Intent che richiedono conferma vocale prima dell'esecuzione
 DANGEROUS_INTENTS = {"close_program"}
 # Intent + parameter che richiedono conferma
-DANGEROUS_PARAMS = {("window", "close_all"), ("window", "close_explorer")}
+DANGEROUS_PARAMS = {("window", "close_all"), ("window", "close_explorer"), ("notes", "svuota")}
 
-# Timeout in secondi per la conferma
-CONFIRM_TIMEOUT = 7
 
+class _LogTee:
+    """Wraps stdout per catturare le righe di log in un buffer."""
+
+    def __init__(self, original, buffer: list):
+        self.original = original
+        self.buffer = buffer
+
+    def write(self, text):
+        self.original.write(text)
+        if text and text.strip():
+            self.buffer.append(text.rstrip("\n"))
+
+    def flush(self):
+        self.original.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.original, name)
 
 
 class Assistant:
@@ -26,6 +46,7 @@ class Assistant:
     state_changed = Signal()
     result_ready = Signal()   # command, result
     notify = Signal()         # notification message
+    detail = Signal()         # detailed status message
 
     def __init__(self, config: Config):
         self.config = config
@@ -33,6 +54,7 @@ class Assistant:
         self._listen_worker: ListenWorker | None = None
         self._busy = False
         self._processing = False
+        self._last_command_log: list[str] = []
 
         # Memoria conversazionale globale
         self._memory = ConversationMemory(
@@ -93,35 +115,95 @@ class Assistant:
     def _check_dictation(text: str):
         """Controlla se il testo è un comando di dettatura. Ritorna (is_dictation, initial_text)."""
         lower = text.lower().strip().rstrip(".")
-        # Keyword matching: se contiene varianti di "dettatura"
         dictation_keywords = ("dettatura", "dittatura", "dettaura", "detta tura")
         for kw in dictation_keywords:
             if kw in lower:
                 return True, ""
-        # Comandi espliciti
         if lower in ("inizia a dettare", "scrivi quello che dico", "dettami"):
             return True, ""
-        # "scrivi [testo]" → digita il testo, MA NON se è "scrivi su/nel/sul/in" (quello è type_in)
-        type_in_prefixes = ("scrivi su ", "scrivi nel ", "scrivi sul ", "scrivi in ", "scrivi nella ",
-                            "scrivi a ", "scrivi al ")
-        if any(lower.startswith(p) for p in type_in_prefixes):
-            return False, ""
-        for prefix in ("scrivi ", "scrivi, ", "scrivi. "):
-            if lower.startswith(prefix):
-                return True, text[len(prefix):].strip()
         return False, ""
 
+    _STOP_WORDS = {"stop", "lily stop", "fermati", "basta", "zitto", "zitta", "taci"}
+    _RESTART_WORDS = {"riavviati", "lily riavviati", "restart", "riavvia lily", "riavvio"}
+
+    def _check_stop(self, text: str) -> bool:
+        """Controlla se è un comando di stop. Ferma TTS immediatamente."""
+        import re
+        lower = re.sub(r'[,\.!\?]', '', text.lower().strip())
+        lower = re.sub(r'\s+', ' ', lower).strip()
+        # Rimuovi "lily" dal prefisso per il matching
+        clean = lower.removeprefix("lily ").strip()
+        if lower in self._STOP_WORDS or clean in self._STOP_WORDS:
+            print("[Stop] Comando stop rilevato")
+            self.tts.stop()
+            self.result_ready.emit(text, "")
+            return True
+        if lower in self._RESTART_WORDS or clean in self._RESTART_WORDS:
+            print("[Restart] Comando riavvio rilevato")
+            self.result_ready.emit(text, "Mi riavvio...")
+            self._request_restart()
+            return True
+        return False
+
+    def _request_restart(self):
+        """Segnala al main loop che deve riavviare."""
+        import sys
+        import subprocess
+        import os
+
+        python = sys.executable
+        script = os.path.abspath(sys.argv[0])
+        cwd = os.path.dirname(script)
+        pid = os.getpid()
+
+        # Lancia wrapper che aspetta la morte del processo e rilancia
+        restart_cmd = (
+            f'powershell -WindowStyle Hidden -Command "'
+            f'Wait-Process -Id {pid} -ErrorAction SilentlyContinue; '
+            f'Start-Sleep -Seconds 3; '
+            f'Start-Process -FilePath \'{python}\' -ArgumentList \'{script}\' -WorkingDirectory \'{cwd}\'"'
+        )
+        print(f"[Restart] PID={pid}, lancio wrapper...")
+        subprocess.Popen(restart_cmd, shell=True)
+
+        # Emetti segnale — il bridge Qt lo riceve nel main thread e chiude l'app
+        self.notify.emit("__RESTART__")
+
     def _process(self, text: str):
+        # Cattura log del comando
+        capture_buf: list[str] = []
+        old_stdout = sys.stdout
+        sys.stdout = _LogTee(old_stdout, capture_buf)
+
         t0 = _time.perf_counter()
+
+        try:
+            self._process_inner(text, t0)
+        finally:
+            sys.stdout = old_stdout
+            # Salva il log solo se non è un copy_log (evita sovrascrittura)
+            if capture_buf and not any("copy_log" in line for line in capture_buf[:5]):
+                self._last_command_log = list(capture_buf)
+
+    def _process_inner(self, text: str, t0: float):
+        # Fast path: stop
+        if self._check_stop(text):
+            self._processing = False
+            self._busy = False
+            return
 
         # Fast path: dettatura senza passare dall'LLM
         is_dictation, initial_text = self._check_dictation(text)
         if is_dictation:
-            print(f"[Dettatura] Rilevato comando dettatura (fast path)")
+            print("[Dettatura] Rilevato comando dettatura (fast path)")
             self.result_ready.emit(text, "Dettatura attivata.")
-            self._play_beep()
+            play_beep()
             try:
-                self._run_dictation(initial_text=initial_text)
+                run_dictation(
+                    self._whisper_model, self.config,
+                    self.state_changed, self.result_ready, play_beep,
+                    initial_text=initial_text,
+                )
             finally:
                 self._processing = False
                 self._busy = False
@@ -130,8 +212,8 @@ class Assistant:
         provider = self.config.provider
         model = self.config.anthropic_model if provider == "anthropic" else self.config.ollama_model
         print(f"[LLM] Invio a {model} ({provider})...")
+        self.detail.emit("Classificazione intent...")
         try:
-            # Passa la history per contesto conversazionale
             history = self._memory.get_messages()
             intent = classify_intent(text, self.config, history=history)
             intent["_original_text"] = text
@@ -139,21 +221,73 @@ class Assistant:
             print(f"[LLM] Risposta: {intent}")
 
             intent_type = intent.get("intent", "unknown")
+            query = intent.get("query", "")
+            self.detail.emit(f"{intent_type}: {query}" if query else intent_type)
+
+            # Copia ultimo log nella clipboard
+            if intent_type == "copy_log":
+                self._handle_copy_log(text)
+                return
+
+            # Catena di comandi
+            if intent_type == "chain":
+                self.detail.emit("Decomposizione comandi...")
+                steps = decompose_chain(text, self.config)
+                if not steps:
+                    self.result_ready.emit(text, "Non sono riuscita a scomporre i comandi.")
+                    return
+
+                print(f"[Chain] {len(steps)} passaggi")
+                results = []
+                for i, step in enumerate(steps):
+                    step_intent = step.get("intent", "unknown")
+
+                    # Wait step
+                    if step_intent == "wait":
+                        secs = float(step.get("parameter", "1"))
+                        print(f"[Chain] Attesa {secs}s...")
+                        self.detail.emit(f"Attesa {secs}s...")
+                        _time.sleep(secs)
+                        continue
+
+                    step["_original_text"] = text
+                    self.detail.emit(f"Passo {i + 1}/{len(steps)}: {step_intent}")
+                    print(f"[Chain] Passo {i + 1}: {step}")
+
+                    result = execute_action(step, self.config, memory=self._memory)
+                    results.append(result)
+                    print(f"[Chain] → {result}")
+
+                final = ". ".join(results)
+                self.detail.emit("")
+                self.result_ready.emit(text, final)
+                self.tts.speak("Fatto, ho eseguito tutti i comandi.")
+                self._memory.add_user(text)
+                self._memory.add_assistant(final)
+                return
 
             # Dettatura classificata dall'LLM (fallback)
             if intent_type == "dictation":
                 initial_text = intent.get("query", "").strip()
                 self.result_ready.emit(text, "Dettatura attivata.")
-                self._play_beep()
-                self._run_dictation(initial_text=initial_text)
+                play_beep()
+                run_dictation(
+                    self._whisper_model, self.config,
+                    self.state_changed, self.result_ready, play_beep,
+                    initial_text=initial_text,
+                )
                 return
 
-            # Dettatura mirata su finestra: "invia su WhatsApp" senza testo
+            # Dettatura mirata su finestra
             if intent_type == "type_in" and intent.get("parameter", "").strip().lower() == "dictate":
                 target_window = intent.get("query", "")
                 self.result_ready.emit(text, f"Parla, invio su {target_window} quando hai finito.")
-                self._play_beep()
-                self._run_dictation_to_window(intent)
+                play_beep()
+                run_dictation_to_window(
+                    self._whisper_model, self.config,
+                    self.state_changed, self.result_ready, play_beep,
+                    self.tts, intent,
+                )
                 return
 
             # Conferma vocale per azioni pericolose
@@ -162,17 +296,18 @@ class Assistant:
                           (intent_type, param) in DANGEROUS_PARAMS)
             if is_dangerous:
                 query = intent.get("query", "")
-                confirm_msg = self._get_confirm_message(intent_type, query, param)
+                confirm_msg = get_confirm_message(intent_type, query, param)
                 print(f"[Sicurezza] Richiesta conferma: {confirm_msg}")
                 self.result_ready.emit(text, f"⚠ {confirm_msg}")
                 self.tts.speak(confirm_msg)
 
-                # Aspetta che il TTS finisca
                 _time.sleep(0.5)
                 while self.tts._speaking:
                     _time.sleep(0.1)
 
-                confirmed = self._wait_for_confirmation()
+                confirmed = wait_for_confirmation(
+                    self._whisper_model, self.config, self.state_changed,
+                )
                 if not confirmed:
                     cancel_msg = "Azione annullata."
                     print(f"[Sicurezza] {cancel_msg}")
@@ -182,12 +317,19 @@ class Assistant:
 
                 print("[Sicurezza] Confermato!")
 
+            self.detail.emit(f"Esecuzione {intent_type}...")
             result = execute_action(intent, self.config, memory=self._memory)
+            self.detail.emit("")
             print(f"[Azione] {result}")
             self.result_ready.emit(text, result)
+
+            # Aggiorna TTS live se i settings sono cambiati
+            if intent_type == "self_config":
+                self.tts.enabled = self.config.tts_enabled
+                self.tts.voice = self.config.tts_voice
+
             self.tts.speak(result)
 
-            # Salva nella memoria conversazionale
             self._memory.add_user(text)
             self._memory.add_assistant(result)
         except Exception as e:
@@ -197,444 +339,25 @@ class Assistant:
             self._processing = False
             self._busy = False
 
-    @staticmethod
-    def _play_beep(freq: int = 800, duration: int = 150):
-        """Suono breve di notifica tramite pygame."""
+    def _handle_copy_log(self, text: str):
+        """Copia l'ultimo log del comando nella clipboard."""
         try:
-            import pygame
-            import numpy as np
+            if not self._last_command_log:
+                msg = "Non c'è nessun log da copiare."
+                self.result_ready.emit(text, msg)
+                self.tts.speak(msg)
+                return
 
-            if not pygame.mixer.get_init():
-                pygame.mixer.init(frequency=44100, size=-16, channels=1)
-
-            sample_rate = 44100
-            n_samples = int(sample_rate * duration / 1000)
-            t = np.linspace(0, duration / 1000, n_samples, dtype=np.float32)
-            # Genera onda sinusoidale con fade in/out
-            wave = np.sin(2 * np.pi * freq * t)
-            fade = min(n_samples // 10, 500)
-            wave[:fade] *= np.linspace(0, 1, fade)
-            wave[-fade:] *= np.linspace(1, 0, fade)
-            # Converti a int16
-            audio = (wave * 16000).astype(np.int16)
-            sound = pygame.mixer.Sound(buffer=audio.tobytes())
-            sound.play()
-            pygame.time.wait(duration + 50)
-        except Exception as e:
-            print(f"[Beep] Errore: {e}")
-
-    @staticmethod
-    def _get_confirm_message(intent_type: str, query: str, parameter: str = "") -> str:
-        """Genera il messaggio di conferma in base al tipo di azione."""
-        if intent_type == "close_program":
-            return f"Vuoi che chiuda {query}?" if query else "Vuoi che chiuda il programma?"
-        if intent_type == "window":
-            if parameter == "close_all":
-                return "Vuoi che chiuda tutte le finestre?"
-            if parameter == "close_explorer":
-                return "Vuoi che chiuda tutte le cartelle aperte?"
-        return f"Confermi l'azione?"
-
-    def _wait_for_confirmation(self) -> bool:
-        """Ascolta per conferma vocale senza hotkey. Ritorna True se confermato, False altrimenti."""
-        import numpy as np
-        import sounddevice as sd
-        import queue as _queue
-
-        print(f"[Sicurezza] In attesa di conferma ({CONFIRM_TIMEOUT}s)...")
-        self.state_changed.emit("confirming")
-
-        audio_q = _queue.Queue()
-        device = self.config.mic_device if self.config.mic_device is not None else None
-        SAMPLE_RATE = 16000
-
-        def callback(indata, frames, time_info, status):
-            audio_q.put(indata[:, 0].copy())
-
-        try:
-            stream = sd.InputStream(
-                samplerate=SAMPLE_RATE, channels=1,
-                dtype="float32", device=device,
-                blocksize=1600, callback=callback,
-            )
-            stream.start()
-        except Exception as e:
-            print(f"[Sicurezza] Errore mic: {e}")
-            return False
-
-        all_chunks = []
-        try:
-            start_time = _time.time()
-            has_speech = False
-            silence_start = None
-            SILENCE_THRESHOLD = 0.012
-            SILENCE_DURATION = 1.2
-
-            while _time.time() - start_time < CONFIRM_TIMEOUT:
-                _time.sleep(0.05)
-
-                # Raccogli nuovi chunk e salva per trascrizione
-                got_new = False
-                try:
-                    while True:
-                        chunk = audio_q.get_nowait()
-                        all_chunks.append(chunk)
-                        got_new = True
-                except _queue.Empty:
-                    pass
-
-                if not got_new:
-                    continue
-
-                energy = float(np.sqrt(np.mean(all_chunks[-1] ** 2)))
-
-                if energy > SILENCE_THRESHOLD:
-                    has_speech = True
-                    silence_start = None
-                elif has_speech:
-                    if silence_start is None:
-                        silence_start = _time.time()
-                    elif _time.time() - silence_start >= SILENCE_DURATION:
-                        print("[Sicurezza] Fine risposta rilevata.")
-                        break
-
-            if not has_speech:
-                print("[Sicurezza] Timeout, nessuna risposta.")
-                return False
-
+            log_text = "\n".join(self._last_command_log)
+            copy_to_clipboard(log_text)
+            n_lines = len(self._last_command_log)
+            msg = f"Log copiato nella clipboard, {n_lines} righe."
+            print(f"[CopyLog] Copiato {n_lines} righe nella clipboard")
+            self.result_ready.emit(text, msg)
+            self.tts.speak(msg)
         finally:
-            stream.stop()
-            stream.close()
-
-        # Aggiungi eventuali chunk rimasti
-        try:
-            while True:
-                all_chunks.append(audio_q.get_nowait())
-        except _queue.Empty:
-            pass
-
-        chunks = all_chunks
-
-        if not chunks:
-            return False
-
-        audio = np.concatenate(chunks)
-        duration = len(audio) / SAMPLE_RATE
-        print(f"[Sicurezza] Audio conferma: {duration:.1f}s")
-
-        if duration < 0.2:
-            return False
-
-        response = transcribe(self._whisper_model, audio, self.config.whisper_model)
-        print(f"[Sicurezza] Risposta: '{response}'")
-
-        if not response:
-            return False
-
-        # Chiedi all'LLM di interpretare la risposta
-        return self._llm_confirm(response)
-
-    def _llm_confirm(self, response: str) -> bool:
-        """Usa l'LLM per capire se la risposta è una conferma o un rifiuto."""
-        from core.llm import get_provider
-        from core.llm.brain import _strip_think_tags, _parse_json
-
-        provider = get_provider(self.config)
-        thinking = getattr(self.config, "thinking_enabled", False)
-
-        prompt = f"""The user was asked to confirm a dangerous action. They replied: "{response}"
-
-Did they confirm (yes) or deny (no)? Reply ONLY with JSON:
-{{"confirm": true}} or {{"confirm": false}}
-
-Examples of YES: "sì", "ok", "vai", "fallo", "certo", "procedi", "confermo", "sì chiudi"
-Examples of NO: "no", "annulla", "stop", "lascia stare", "non farlo", "aspetta"
-If unclear, default to false (safer)."""
-
-        if not thinking:
-            prompt += "\n/no_think"
-
-        try:
-            raw = provider.chat(
-                model=self.config.ollama_model,
-                messages=[{"role": "user", "content": prompt}],
-                format_json=True,
-                num_predict=16,
-                timeout=10,
-                thinking=thinking,
-            )
-            raw = _strip_think_tags(raw)
-            print(f"[Sicurezza] LLM conferma raw: {raw}")
-            data = _parse_json(raw)
-            if data and "confirm" in data:
-                return bool(data["confirm"])
-        except Exception as e:
-            print(f"[Sicurezza] Errore LLM conferma: {e}")
-
-        # Default: annulla per sicurezza
-        return False
-
-    def _run_dictation(self, initial_text: str = ""):
-        """Modalità dettatura: registra a segmenti e digita il testo al cursore."""
-        import numpy as np
-        import sounddevice as sd
-        import queue as _queue
-        import keyboard
-
-        SAMPLE_RATE = 16000
-        SPEECH_THRESHOLD = 0.008
-        SEGMENT_SILENCE = getattr(self.config, "dictation_silence_duration", 3.5)
-        silence_timeout = getattr(self.config, "dictation_silence_timeout", 8)
-
-        device = self.config.mic_device if self.config.mic_device is not None else None
-        audio_q = _queue.Queue()
-
-        def callback(indata, frames, time_info, status):
-            audio_q.put(indata[:, 0].copy())
-
-        self.state_changed.emit("dictation")
-        print(f"[Dettatura] Avviata. Auto-stop dopo {silence_timeout}s di silenzio.")
-
-        try:
-            stream = sd.InputStream(
-                samplerate=SAMPLE_RATE, channels=1,
-                dtype="float32", device=device,
-                blocksize=1600, callback=callback,
-            )
-            stream.start()
-        except Exception as e:
-            print(f"[Dettatura] Errore mic: {e}")
-            self.result_ready.emit("", f"Errore microfono: {e}")
-            return
-
-        segments_written = 0
-
-        # Digita subito il testo iniziale (es. "scrivi ciao" → digita "ciao")
-        if initial_text:
-            print(f"[Dettatura] Testo iniziale: {initial_text}")
-            keyboard.write(initial_text)
-            segments_written += 1
-            self.result_ready.emit("Dettatura", initial_text)
-
-        last_speech_time = _time.time()
-
-        try:
-            while True:
-                # Fase 1: aspetta che l'utente inizi a parlare
-                has_speech = False
-                while not has_speech:
-                    _time.sleep(0.05)
-                    if _time.time() - last_speech_time > silence_timeout:
-                        print(f"[Dettatura] Auto-stop: {silence_timeout}s senza parlato.")
-                        raise StopIteration
-
-                    latest = None
-                    while not audio_q.empty():
-                        latest = audio_q.get()
-                    if latest is not None:
-                        energy = float(np.sqrt(np.mean(latest ** 2)))
-                        if energy > SPEECH_THRESHOLD:
-                            has_speech = True
-                            last_speech_time = _time.time()
-
-                # Fase 2: registra finché parla, stop su silenzio
-                print("[Dettatura] Parlato rilevato, registro segmento...")
-                segment_chunks = []
-                while not audio_q.empty():
-                    segment_chunks.append(audio_q.get())
-
-                silence_start = None
-                while True:
-                    _time.sleep(0.03)
-                    got_chunk = False
-                    while not audio_q.empty():
-                        chunk = audio_q.get()
-                        segment_chunks.append(chunk)
-                        got_chunk = True
-                        energy = float(np.sqrt(np.mean(chunk ** 2)))
-                        if energy > SPEECH_THRESHOLD:
-                            silence_start = None
-                            last_speech_time = _time.time()
-                        elif silence_start is None:
-                            silence_start = _time.time()
-
-                    if not got_chunk and silence_start is None:
-                        silence_start = _time.time()
-
-                    if silence_start and _time.time() - silence_start >= SEGMENT_SILENCE:
-                        break
-
-                # Fase 3: trascrivi e digita
-                if not segment_chunks:
-                    continue
-
-                audio = np.concatenate(segment_chunks)
-                duration = len(audio) / SAMPLE_RATE
-                if duration < 0.3:
-                    continue
-
-                print(f"[Dettatura] Segmento: {duration:.1f}s, trascrivo...")
-                text = transcribe(self._whisper_model, audio, self.config.whisper_model)
-
-                if text:
-                    print(f"[Dettatura] Testo: {text}")
-                    if segments_written > 0:
-                        keyboard.write(" ")
-                    keyboard.write(text)
-                    segments_written += 1
-                    self.result_ready.emit("Dettatura", text)
-
-        except StopIteration:
-            pass
-        except Exception as e:
-            print(f"[Dettatura] Errore: {e}")
-        finally:
-            stream.stop()
-            stream.close()
-            self._play_beep(freq=400, duration=200)
-            end_msg = f"Dettatura terminata. {segments_written} segmenti trascritti."
-            print(f"[Dettatura] {end_msg}")
-            self.result_ready.emit("", end_msg)
-            self.state_changed.emit("idle")
-
-    def _run_dictation_to_window(self, intent: dict):
-        """Dettatura mirata: ascolta, trascrive tutto, poi incolla e invia sulla finestra target."""
-        import numpy as np
-        import sounddevice as sd
-        import queue as _queue
-
-        SAMPLE_RATE = 16000
-        SPEECH_THRESHOLD = 0.008
-        SILENCE_DURATION = getattr(self.config, "dictation_silence_duration", 3.5)
-        TIMEOUT = getattr(self.config, "dictation_max_duration", 60)
-
-        device = self.config.mic_device if self.config.mic_device is not None else None
-        audio_q = _queue.Queue()
-
-        def callback(indata, frames, time_info, status):
-            audio_q.put(indata[:, 0].copy())
-
-        self.state_changed.emit("dictation")
-        query = intent.get("query", "")
-        search_terms = intent.get("search_terms", [])
-        print(f"[Dettatura→Finestra] Ascolto per {query}...")
-
-        try:
-            stream = sd.InputStream(
-                samplerate=SAMPLE_RATE, channels=1,
-                dtype="float32", device=device,
-                blocksize=1600, callback=callback,
-            )
-            stream.start()
-        except Exception as e:
-            print(f"[Dettatura→Finestra] Errore mic: {e}")
-            self.result_ready.emit("", f"Errore microfono: {e}")
-            return
-
-        # Registra tutto l'audio finché l'utente non smette di parlare
-        all_chunks = []
-        has_speech = False
-        silence_start = None
-        start_time = _time.time()
-
-        try:
-            while _time.time() - start_time < TIMEOUT:
-                _time.sleep(0.05)
-
-                got_new = False
-                try:
-                    while True:
-                        chunk = audio_q.get_nowait()
-                        all_chunks.append(chunk)
-                        got_new = True
-                except _queue.Empty:
-                    pass
-
-                if not got_new:
-                    continue
-
-                energy = float(np.sqrt(np.mean(all_chunks[-1] ** 2)))
-
-                if energy > SPEECH_THRESHOLD:
-                    has_speech = True
-                    silence_start = None
-                elif has_speech:
-                    if silence_start is None:
-                        silence_start = _time.time()
-                    elif _time.time() - silence_start >= SILENCE_DURATION:
-                        print("[Dettatura→Finestra] Fine parlato.")
-                        break
-
-        finally:
-            stream.stop()
-            stream.close()
-
-        if not has_speech or not all_chunks:
-            self._play_beep(freq=400, duration=200)
-            self.result_ready.emit("", "Nessun audio rilevato.")
-            self.state_changed.emit("idle")
-            return
-
-        # Trascrivi
-        audio = np.concatenate(all_chunks)
-        duration = len(audio) / SAMPLE_RATE
-        print(f"[Dettatura→Finestra] Audio: {duration:.1f}s, trascrivo...")
-
-        dictated_text = transcribe(self._whisper_model, audio, self.config.whisper_model)
-        if not dictated_text:
-            self._play_beep(freq=400, duration=200)
-            self.result_ready.emit("", "Non ho capito cosa hai detto.")
-            self.state_changed.emit("idle")
-            return
-
-        print(f"[Dettatura→Finestra] Testo: {dictated_text}")
-
-        # Scrivi e invia sulla finestra target
-        from core.actions.type_action import _find_window, _clipboard_paste
-
-        candidates = [query] + search_terms
-        words = query.split()
-        if len(words) > 1:
-            for i in range(len(words)):
-                sub = " ".join(words[i:])
-                if sub not in candidates:
-                    candidates.append(sub)
-
-        import ctypes
-        user32 = ctypes.windll.user32
-        import keyboard as kb
-
-        hwnd = None
-        for term in candidates:
-            hwnd = _find_window(term)
-            if hwnd:
-                break
-
-        if hwnd is None:
-            self._play_beep(freq=400, duration=200)
-            self.result_ready.emit("", f"Non trovo la finestra {query}.")
-            self.state_changed.emit("idle")
-            return
-
-        # Salva focus, switch, incolla, invio, ripristina
-        prev_hwnd = user32.GetForegroundWindow()
-        if user32.IsIconic(hwnd):
-            user32.ShowWindow(hwnd, 9)
-        user32.SetForegroundWindow(hwnd)
-        _time.sleep(0.15)
-
-        _clipboard_paste(dictated_text)
-        _time.sleep(0.05)
-        kb.send("enter")
-        _time.sleep(0.1)
-
-        if prev_hwnd and prev_hwnd != hwnd:
-            user32.SetForegroundWindow(prev_hwnd)
-
-        self._play_beep(freq=400, duration=200)
-        self.result_ready.emit(dictated_text, f"Inviato su {query}.")
-        self.tts.speak(f"Inviato su {query}.")
-        self.state_changed.emit("idle")
+            self._processing = False
+            self._busy = False
 
     def _on_worker_finished(self):
         print(f"[Worker] Finito. processing={self._processing}")
@@ -646,6 +369,12 @@ If unclear, default to false (safer)."""
         self.state_changed.emit("idle")
         self._busy = False
         self.notify.emit(message)
+
+    def apply_config(self):
+        """Applica le modifiche alla configurazione. Chiamato da SettingsPage dopo save."""
+        self.tts.enabled = self.config.tts_enabled
+        self.tts.voice = self.config.tts_voice
+        self._memory.max_exchanges = getattr(self.config, "chat_max_history", 5)
 
     def update_hotkey(self):
         self._hotkey.register(self.config.hotkey)
