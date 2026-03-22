@@ -1,0 +1,73 @@
+# =============================================================================
+#  Lily — .gitignore
+# =============================================================================
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+
+# ---- Virtual environment ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- IDE ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# ---- ML Models (pesanti, scaricabili) ----
+models/tts/*.onnx
+models/tts/*.onnx.json
+models/whisper/
+
+# ---- CUDA / DLL bundled ----
+lib/*.dll
+
+# ---- Tool binari ----
+es.exe
+
+# ---- Settings utente (contengono API key, path personali) ----
+settings.json
+settings_backup.json
+usage.json
+
+# ---- Claude Code ----
+.claude/
+
+# ---- OS junk ----
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+._*
+
+# ---- Log e temp ----
+*.log
+*.tmp
+*.temp
+*.bak
+*.cache
+
+# ---- Audio temp (registrazioni mic) ----
+*.wav
+*.mp3
+*.ogg
+
+# ---- Screenshot temp ----
+screenshots/
+
+# ---- Note utente (dati personali) ----
+notes.md

@@ -1,0 +1,50 @@
+import requests
+
+from core.llm.base_provider import LLMProvider
+
+OLLAMA_BASE = "http://localhost:11434"
+
+
+class OllamaProvider(LLMProvider):
+    def check(self) -> bool:
+        try:
+            r = requests.get(OLLAMA_BASE, timeout=3)
+            return r.status_code == 200
+        except Exception:
+            return False
+
+    def get_models(self) -> list[str]:
+        try:
+            r = requests.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
+            r.raise_for_status()
+            data = r.json()
+            return [m["name"] for m in data.get("models", [])]
+        except Exception:
+            return []
+
+    def chat(self, model: str, messages: list[dict], format_json: bool = False,
+             temperature: float = 0.0, num_predict: int = 128, timeout: int = 60,
+             thinking: bool = False) -> str:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            "options": {"temperature": temperature, "num_predict": num_predict},
+        }
+        if format_json:
+            payload["format"] = "json"
+        # Disable thinking for models that support it (e.g. qwen3)
+        # when not explicitly enabled — prevents wasting tokens on <think> blocks
+        if not thinking:
+            payload["options"]["num_ctx"] = payload["options"].get("num_ctx", 4096)
+            # Ollama uses 'think' option to control thinking in supported models
+            payload["think"] = False
+        r = requests.post(f"{OLLAMA_BASE}/api/chat", json=payload, timeout=timeout)
+        r.raise_for_status()
+        data = r.json()
+
+        prompt_tokens = data.get("prompt_eval_count", 0)
+        completion_tokens = data.get("eval_count", 0)
+        print(f"[Tokens] prompt={prompt_tokens} completion={completion_tokens} totale={prompt_tokens + completion_tokens}")
+
+        return data.get("message", {}).get("content", "").strip()

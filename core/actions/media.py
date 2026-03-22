@@ -1,0 +1,42 @@
+"""Controllo multimedia: play/pausa, traccia successiva/precedente, volume app."""
+
+import ctypes
+from core.actions.base import Action
+
+# Virtual key codes per i tasti multimediali di Windows
+VK_MEDIA_PLAY_PAUSE = 0xB3
+VK_MEDIA_NEXT_TRACK = 0xB0
+VK_MEDIA_PREV_TRACK = 0xB1
+VK_MEDIA_STOP = 0xB2
+
+KEYEVENTF_EXTENDEDKEY = 0x0001
+KEYEVENTF_KEYUP = 0x0002
+
+
+def _press_media_key(vk_code: int):
+    """Simula la pressione di un tasto multimediale."""
+    ctypes.windll.user32.keybd_event(vk_code, 0, KEYEVENTF_EXTENDEDKEY, 0)
+    ctypes.windll.user32.keybd_event(vk_code, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
+
+
+class MediaAction(Action):
+    def execute(self, intent: dict, config) -> str:
+        parameter = intent.get("parameter", "").strip().lower()
+
+        if parameter in ("play", "pause", "play_pause"):
+            _press_media_key(VK_MEDIA_PLAY_PAUSE)
+            return "Play o pausa."
+
+        elif parameter in ("next", "skip", "avanti"):
+            _press_media_key(VK_MEDIA_NEXT_TRACK)
+            return "Traccia successiva."
+
+        elif parameter in ("previous", "prev", "indietro"):
+            _press_media_key(VK_MEDIA_PREV_TRACK)
+            return "Traccia precedente."
+
+        elif parameter == "stop":
+            _press_media_key(VK_MEDIA_STOP)
+            return "Riproduzione fermata."
+
+        return "Comando multimediale non riconosciuto."
