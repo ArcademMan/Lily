@@ -106,7 +106,7 @@ class MainWindow(QMainWindow):
     def _switch_page(self, index: int):
         self._stack.setCurrentIndex(index)
         if index == 0:
-            self._voice_page._update_provider_warning()
+            self._voice_page._update_model_label()
         elif index == 3:
             self._dashboard_page.refresh()
 

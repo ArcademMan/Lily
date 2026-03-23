@@ -80,7 +80,7 @@ class LLMPage(QWidget):
         pc.setSpacing(10)
 
         self._provider = QComboBox()
-        self._provider.addItems(["ollama", "anthropic"])
+        self._provider.addItems(["ollama", "anthropic", "openai", "gemini"])
         self._provider.setCurrentText(config.provider)
         self._provider.currentTextChanged.connect(self._on_provider_changed)
         pc.addLayout(_row("Provider", self._provider))
@@ -115,9 +115,41 @@ class LLMPage(QWidget):
         pc.addLayout(self._anthropic_model_row)
 
         max_res_row, self._max_results, self._mr_label = _slider_row(
-            "Max risultati (Anthropic)", 1, 30, config.anthropic_max_results)
+            "Max risultati (Cloud)", 1, 30, config.anthropic_max_results)
         self._max_results_row = max_res_row
         pc.addLayout(max_res_row)
+
+        # openai fields
+        self._openai_api_key = QLineEdit(config.openai_api_key)
+        self._openai_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._openai_api_key_row = _row("API Key OpenAI", self._openai_api_key)
+        pc.addLayout(self._openai_api_key_row)
+
+        self._openai_model = QComboBox()
+        self._openai_model.addItems([
+            "gpt-4o-mini",
+            "gpt-4o",
+            "gpt-5.4-nano",
+            "gpt-5.4-mini",
+        ])
+        self._openai_model.setCurrentText(config.openai_model)
+        self._openai_model_row = _row("Modello OpenAI", self._openai_model)
+        pc.addLayout(self._openai_model_row)
+
+        # gemini fields
+        self._gemini_api_key = QLineEdit(config.gemini_api_key)
+        self._gemini_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._gemini_api_key_row = _row("API Key Gemini", self._gemini_api_key)
+        pc.addLayout(self._gemini_api_key_row)
+
+        self._gemini_model = QComboBox()
+        self._gemini_model.addItems([
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+        ])
+        self._gemini_model.setCurrentText(config.gemini_model)
+        self._gemini_model_row = _row("Modello Gemini", self._gemini_model)
+        pc.addLayout(self._gemini_model_row)
 
         form.addWidget(provider_card)
         form.addSpacing(8)
@@ -211,11 +243,19 @@ class LLMPage(QWidget):
 
     def _on_provider_changed(self, provider: str):
         is_ollama = provider == "ollama"
+        is_anthropic = provider == "anthropic"
+        is_openai = provider == "openai"
+        is_gemini = provider == "gemini"
+        is_cloud = not is_ollama
         self._set_row_visible(self._ollama_row, is_ollama)
         self._set_row_visible(self._ollama_status_row, is_ollama)
-        self._set_row_visible(self._api_key_row, not is_ollama)
-        self._set_row_visible(self._anthropic_model_row, not is_ollama)
-        self._set_row_visible(self._max_results_row, not is_ollama)
+        self._set_row_visible(self._api_key_row, is_anthropic)
+        self._set_row_visible(self._anthropic_model_row, is_anthropic)
+        self._set_row_visible(self._openai_api_key_row, is_openai)
+        self._set_row_visible(self._openai_model_row, is_openai)
+        self._set_row_visible(self._gemini_api_key_row, is_gemini)
+        self._set_row_visible(self._gemini_model_row, is_gemini)
+        self._set_row_visible(self._max_results_row, is_cloud)
 
     @staticmethod
     def _set_row_visible(layout: QHBoxLayout, visible: bool):
@@ -230,6 +270,10 @@ class LLMPage(QWidget):
         self._config.anthropic_api_key = self._api_key.text().strip()
         self._config.anthropic_model = self._anthropic_model.currentText()
         self._config.anthropic_max_results = self._max_results.value()
+        self._config.openai_api_key = self._openai_api_key.text().strip()
+        self._config.openai_model = self._openai_model.currentText()
+        self._config.gemini_api_key = self._gemini_api_key.text().strip()
+        self._config.gemini_model = self._gemini_model.currentText()
         self._config.thinking_enabled = self._thinking.isChecked()
         self._config.num_predict = self._num_predict.value()
         self._config.chat_num_predict = self._chat_num_predict.value()

@@ -12,7 +12,8 @@ from core.llm.prompts import (
 
 
 def _get_prompts(config):
-    if getattr(config, "provider", "ollama") == "anthropic":
+    provider = getattr(config, "provider", "ollama")
+    if provider in ("anthropic", "openai", "gemini"):
         return SYSTEM_PROMPT_CLAUDE, PICK_PROMPT_CLAUDE
     return SYSTEM_PROMPT_OLLAMA, PICK_PROMPT_OLLAMA
 
@@ -153,7 +154,7 @@ def pick_best_result(user_query: str, results: list[str], config,
         pass
 
     thinking = getattr(config, "thinking_enabled", False)
-    is_cloud = getattr(config, "provider", "ollama") == "anthropic"
+    is_cloud = getattr(config, "provider", "ollama") in ("anthropic", "openai", "gemini")
     max_results = getattr(config, "anthropic_max_results", 10)
     capped = results[:max_results] if is_cloud else results
     _, pick_template = _get_prompts(config)

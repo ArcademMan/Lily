@@ -18,6 +18,7 @@ _STATE_LABELS = {
 
 class VoicePage(QWidget):
     _gpu_info_ready = QtSignal(str)
+    _services_ready = QtSignal(dict)
 
     def __init__(self, bridge, config=None, parent=None):
         super().__init__(parent)
@@ -65,28 +66,46 @@ class VoicePage(QWidget):
 
         layout.addStretch(1)
 
-        # provider warning
-        self._provider_warn = QLabel("")
-        self._provider_warn.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self._provider_warn)
-        self._update_provider_warning()
+        # model info label (provider — model)
+        self._model_label = QLabel("")
+        self._model_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._model_label)
+        self._update_model_label()
 
-        # blink timer per il warning Anthropic
+        # soft blink timer
         self._blink_on = True
         self._blink_timer = QTimer(self)
-        self._blink_timer.timeout.connect(self._blink_warning)
-        self._blink_timer.start(800)
+        self._blink_timer.timeout.connect(self._blink_model)
+        self._blink_timer.start(1500)
 
         layout.addStretch(1)
 
-        # GPU info bar
-        gpu_bar = QHBoxLayout()
-        gpu_bar.setContentsMargins(0, 0, 0, 0)
+        # ── Status footer (no card) ──
+        footer = QHBoxLayout()
+        footer.setContentsMargins(0, 8, 0, 8)
+        footer.setSpacing(16)
+        footer.addStretch()
+
+        self._status_ollama = QLabel("Ollama: ...")
+        self._status_ollama.setStyleSheet("font-size: 11px; color: #888;")
+        footer.addWidget(self._status_ollama)
+
+        sep = QLabel("|")
+        sep.setStyleSheet("font-size: 11px; color: #333;")
+        footer.addWidget(sep)
+
+        self._status_everything = QLabel("Everything: ...")
+        self._status_everything.setStyleSheet("font-size: 11px; color: #888;")
+        footer.addWidget(self._status_everything)
+
+        footer.addStretch()
+        layout.addLayout(footer)
+
+        # GPU info
         self._gpu_label = QLabel("")
         self._gpu_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._gpu_label.setStyleSheet("font-size: 10px; color: #555555;")
-        gpu_bar.addWidget(self._gpu_label)
-        layout.addLayout(gpu_bar)
+        layout.addWidget(self._gpu_label)
 
         # clear timer
         self._clear_timer = QTimer(self)
@@ -99,6 +118,13 @@ class VoicePage(QWidget):
         self._gpu_timer.start(5000)
         self._gpu_info_ready.connect(self._gpu_label.setText)
         self._fetch_gpu_info()
+
+        # services check
+        self._services_ready.connect(self._update_services)
+        self._services_timer = QTimer(self)
+        self._services_timer.timeout.connect(self._check_services)
+        self._services_timer.start(10000)
+        self._check_services()
 
         # signals
         bridge.state_changed.connect(self._on_state)
@@ -124,7 +150,7 @@ class VoicePage(QWidget):
         self._detail_label.setText("")
         self._transcription.setText(f'"{text}"')
         self._result.setText(result)
-        self._clear_timer.start(8000)
+        self._clear_timer.stop()
 
     def _on_notify(self, msg: str):
         self._result.setText(msg)
@@ -134,24 +160,22 @@ class VoicePage(QWidget):
         self._transcription.setText("")
         self._result.setText("")
 
-    def _update_provider_warning(self):
-        if self._config and getattr(self._config, "provider", "ollama") == "anthropic":
-            self._provider_warn.setText("Anthropic")
-            self._provider_warn.setStyleSheet("font-size: 12px; font-weight: bold; color: #F44336;")
-            self._blink_on = True
-        else:
-            self._provider_warn.setText("Tieni premuto il tasto hotkey per parlare")
-            self._provider_warn.setStyleSheet("font-size: 12px; color: #555555;")
+    def _get_model_text(self) -> str:
+        if not self._config:
+            return ""
+        provider = getattr(self._config, "provider", "ollama")
+        model = getattr(self._config, f"{provider}_model", "")
+        return f"{provider.capitalize()} — {model}" if model else provider.capitalize()
 
-    def _blink_warning(self):
-        if not self._config or getattr(self._config, "provider", "ollama") != "anthropic":
-            self._update_provider_warning()
-            return
+    def _update_model_label(self):
+        self._model_label.setText(self._get_model_text())
+        self._model_label.setStyleSheet("font-size: 11px; color: #555;")
+
+    def _blink_model(self):
+        self._model_label.setText(self._get_model_text())
         self._blink_on = not self._blink_on
-        if self._blink_on:
-            self._provider_warn.setStyleSheet("font-size: 12px; font-weight: bold; color: #F44336;")
-        else:
-            self._provider_warn.setStyleSheet("font-size: 12px; font-weight: bold; color: #661111;")
+        color = "#666" if self._blink_on else "#3a3a3a"
+        self._model_label.setStyleSheet(f"font-size: 11px; color: {color};")
 
     def _fetch_gpu_info(self):
         """Aggiorna info GPU in background."""
@@ -179,10 +203,39 @@ class VoicePage(QWidget):
 
         threading.Thread(target=_query, daemon=True).start()
 
+    def _check_services(self):
+        def _check():
+            status = {}
+            try:
+                from core.llm.ollama_provider import OllamaProvider
+                status["ollama"] = OllamaProvider().check()
+            except Exception:
+                status["ollama"] = False
+            try:
+                from core.search import check_everything
+                es_path = self._config.es_path if self._config else "es.exe"
+                status["everything"] = check_everything(es_path)
+            except Exception:
+                status["everything"] = False
+            self._services_ready.emit(status)
+
+        threading.Thread(target=_check, daemon=True).start()
+
+    def _update_services(self, status: dict):
+        def _fmt(name, ok):
+            dot_color = "#4CAF50" if ok else "#F44336"
+            return f'<span style="color:{dot_color};">●</span> <span style="color:#888;">{name}</span>'
+
+        self._status_ollama.setText(_fmt("Ollama", status.get("ollama", False)))
+        self._status_everything.setText(_fmt("Everything", status.get("everything", False)))
+
     def showEvent(self, event):
         super().showEvent(event)
         self._gpu_timer.start(5000)
+        self._services_timer.start(10000)
+        self._check_services()
 
     def hideEvent(self, event):
         super().hideEvent(event)
         self._gpu_timer.stop()
+        self._services_timer.stop()

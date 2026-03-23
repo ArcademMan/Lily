@@ -10,7 +10,7 @@ import keyboard
 from core.voice.transcriber import transcribe
 from core.utils.audio import record_until_silence, SAMPLE_RATE, play_beep
 
-SPEECH_THRESHOLD = 0.008
+SPEECH_THRESHOLD = 0.005
 
 
 def run_dictation(whisper_model, config, state_changed, result_ready, play_beep,

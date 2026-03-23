@@ -45,22 +45,12 @@ Assistente vocale in italiano per Windows con pipeline: hotkey → registrazione
 - Config thread-safe (RLock) + error handling JSON corrotto
 - `find_window` unificata in `core/utils/win32.py`
 - Quick notes vocali (salva, leggi, cancella note con timestamp)
+- Catena di comandi in linguaggio naturale (decomposizione LLM in sotto-azioni sequenziali)
 
 ---
 
 ## TODO — Feature da implementare
 
-### Tier 1 — Alto impatto
-- [ ] Automazioni / Macro vocali — sequenze di azioni con un comando (es. "Modalità gaming" → chiude Teams, apre Discord, lancia Steam, volume 70%). Intent `macro` + file JSON configurabile
-- [ ] Catena di comandi in linguaggio naturale — "Apri Chrome, vai su YouTube e cerca lofi music" → decomposizione LLM in sotto-azioni sequenziali
-
-### Tier 2 — Differenziatori unici
-- [ ] Apprendimento dalle correzioni — "no, intendevo X" → salva correzione come contesto futuro per intent
 - [ ] Monitoring passivo / Watchdog — "avvisami quando il download finisce", monitor cartella/processo/CPU
-- [ ] Profili contestuali automatici — Lily rileva quale app è in primo piano e adatta i comandi
-
-### Tier 3 — Feature che nessun assistente ha
-- [ ] **Game Companion** — Lily vede lo schermo di gioco (screenshot + OCR), sa a cosa stai giocando, e risponde a domande specifiche: "come batto questo boss?", "dove trovo questo item?", "che quest devo fare?" — tutto a voce senza uscire dal gioco
-- [ ] **Automazione visiva** — "quando vedi la scritta X sullo schermo, avvisami" — polling periodico con OCR, notifica vocale. Monitoraggio visivo dello schermo
-- [ ] **Programmazione a voce** — "vai su VS Code, crea un nuovo file utils.py, scrivi una funzione che calcola il fattoriale" — Lily genera il codice con l'LLM e lo incolla nell'editor
-- [ ] **Multi-step visivi** — "cerca su Google Immagini un gatto e scarica la prima immagine" — azioni concatenate con feedback visivo (screenshot → OCR → decisione → azione)
+- [ ] Automazione visiva — "quando vedi la scritta X sullo schermo, avvisami" — polling periodico con OCR, notifica vocale. Monitoraggio visivo dello schermo
+- [ ] Multi-step visivi — "cerca su Google Immagini un gatto e scarica la prima immagine" — azioni concatenate con feedback visivo (screenshot → OCR → decisione → azione)

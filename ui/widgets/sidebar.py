@@ -91,12 +91,17 @@ class Sidebar(QWidget):
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
             "assets", "lily.png",
         )
-        logo = QLabel()
+        logo = QPushButton()
         logo.setFixedSize(48, 48)
-        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo.setStyleSheet("background: transparent;")
-        pixmap = _make_circle_pixmap(icon_path, _LOGO_SIZE)
-        logo.setPixmap(pixmap)
+        logo.setIconSize(QSize(_LOGO_SIZE, _LOGO_SIZE))
+        logo.setIcon(QIcon(_make_circle_pixmap(icon_path, _LOGO_SIZE)))
+        logo.setCursor(Qt.CursorShape.PointingHandCursor)
+        logo.setToolTip("Home")
+        logo.setStyleSheet(
+            "QPushButton { background: transparent; border: none; border-radius: 8px; }"
+            "QPushButton:hover { background: rgba(255,255,255,8); }"
+        )
+        logo.clicked.connect(lambda: self._on_click(0))
         layout.addWidget(logo, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addSpacing(8)
 

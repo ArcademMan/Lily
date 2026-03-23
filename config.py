@@ -20,8 +20,13 @@ USER_DEFAULTS = {
     "anthropic_api_key": "",
     "anthropic_model": "claude-haiku-4-5-20251001",
     "anthropic_max_results": 10,
+    "openai_api_key": "",
+    "openai_model": "gpt-4o-mini",
+    "gemini_api_key": "",
+    "gemini_model": "gemini-2.5-flash",
     "mic_device": None,
     "whisper_model": "medium",
+    "whisper_device": "cuda",
 }
 
 # Settings che Lily può auto-modificare (hotkey, paths, TTS, tuning)

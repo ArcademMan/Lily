@@ -14,6 +14,7 @@ from core.actions.type_action import TypeInAction
 from core.actions.screen_read import ScreenReadAction
 from core.actions.self_config import SelfConfigAction
 from core.actions.notes import NotesAction
+from core.actions.system_info import SystemInfoAction
 
 _ACTIONS = {
     "open_folder": OpenFolderAction(),
@@ -32,6 +33,7 @@ _ACTIONS = {
     "screen_read": ScreenReadAction(),
     "self_config": SelfConfigAction(),
     "notes": NotesAction(),
+    "system_info": SystemInfoAction(),
 }
 
 

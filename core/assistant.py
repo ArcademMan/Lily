@@ -15,6 +15,7 @@ from core.voice.confirmation import wait_for_confirmation, get_confirm_message
 from core.voice.dictation import run_dictation, run_dictation_to_window
 from core.utils.audio import play_beep
 from core.utils.clipboard import copy_to_clipboard
+from core.actions.timer_action import _TimerNotifier
 
 # Intent che richiedono conferma vocale prima dell'esecuzione
 DANGEROUS_INTENTS = {"close_program"}
@@ -64,6 +65,11 @@ class Assistant:
         # TTS
         self.tts = TTSEngine(voice=config.tts_voice, enabled=config.tts_enabled)
 
+        # Collega timer/reminder al TTS e notifiche
+        timer_notifier = _TimerNotifier.instance()
+        timer_notifier.speak.connect(lambda msg: self.tts.speak(msg))
+        timer_notifier.notify.connect(lambda msg: self.notify.emit(msg))
+
         # Hotkey
         self._hotkey = HotkeyManager()
         self._hotkey.pressed.connect(self._start_listening)
@@ -71,7 +77,7 @@ class Assistant:
 
         # Load whisper model in background
         self.state_changed.emit("loading")
-        self._loader = WhisperLoader(config.whisper_model)
+        self._loader = WhisperLoader(config.whisper_model, config.whisper_device)
         self._loader.finished.connect(self._on_model_loaded)
         self._loader.start()
 
@@ -121,6 +127,13 @@ class Assistant:
                 return True, ""
         if lower in ("inizia a dettare", "scrivi quello che dico", "dettami"):
             return True, ""
+        type_in_prefixes = ("scrivi su ", "scrivi nel ", "scrivi sul ", "scrivi in ", "scrivi nella ",
+                            "scrivi a ", "scrivi al ")
+        if any(lower.startswith(p) for p in type_in_prefixes):
+            return False, ""
+        for prefix in ("scrivi ", "scrivi, ", "scrivi. "):
+            if lower.startswith(prefix):
+                return True, text[len(prefix):].strip()
         return False, ""
 
     _STOP_WORDS = {"stop", "lily stop", "fermati", "basta", "zitto", "zitta", "taci"}
