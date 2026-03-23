@@ -114,11 +114,6 @@ class LLMPage(QWidget):
         self._anthropic_model_row = _row("Modello Anthropic", self._anthropic_model)
         pc.addLayout(self._anthropic_model_row)
 
-        max_res_row, self._max_results, self._mr_label = _slider_row(
-            "Max risultati (Cloud)", 1, 30, config.anthropic_max_results)
-        self._max_results_row = max_res_row
-        pc.addLayout(max_res_row)
-
         # openai fields
         self._openai_api_key = QLineEdit(config.openai_api_key)
         self._openai_api_key.setEchoMode(QLineEdit.EchoMode.Password)
@@ -150,6 +145,12 @@ class LLMPage(QWidget):
         self._gemini_model.setCurrentText(config.gemini_model)
         self._gemini_model_row = _row("Modello Gemini", self._gemini_model)
         pc.addLayout(self._gemini_model_row)
+
+        # max results slider (cloud only, always last)
+        max_res_row, self._max_results, self._mr_label = _slider_row(
+            "Max risultati (Cloud)", 1, 30, config.anthropic_max_results)
+        self._max_results_row = max_res_row
+        pc.addLayout(max_res_row)
 
         form.addWidget(provider_card)
         form.addSpacing(8)

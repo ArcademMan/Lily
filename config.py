@@ -5,7 +5,9 @@ import threading
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 _APPDATA = os.environ.get("APPDATA", os.path.expanduser("~"))
-SETTINGS_DIR = os.path.join(_APPDATA, "AmMstools", "Lily", "settings")
+LILY_DIR = os.path.join(_APPDATA, "AmMstools", "Lily")
+SETTINGS_DIR = os.path.join(LILY_DIR, "settings")
+MODELS_DIR = os.path.join(LILY_DIR, "models")
 USER_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "user_settings.json")
 LILY_SETTINGS_FILE = os.path.join(SETTINGS_DIR, "lily_settings.json")
 
@@ -27,6 +29,7 @@ USER_DEFAULTS = {
     "mic_device": None,
     "whisper_model": "medium",
     "whisper_device": "cuda",
+    "setup_done": False,
 }
 
 # Settings che Lily può auto-modificare (hotkey, paths, TTS, tuning)

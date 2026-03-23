@@ -1,5 +1,17 @@
 """Prompt templates per classificazione intent, chat, pick e retry."""
 
+import os as _os
+
+def _get_lily_paths_block():
+    """Minimal self-awareness: Lily's own paths for self-referential requests."""
+    appdata = _os.environ.get("APPDATA", _os.path.expanduser("~"))
+    lily_dir = _os.path.join(appdata, "AmMstools", "Lily")
+    settings_dir = _os.path.join(lily_dir, "settings")
+    return (
+        f"\nYou are Lily. Your settings: {settings_dir} — Your data: {lily_dir}. "
+        f"If user asks about YOUR folders/settings, use open_folder with parameter=exact path."
+    )
+
 SYSTEM_PROMPT_OLLAMA = """Classify the user intent from Italian voice input. The text comes from speech-to-text and OFTEN contains errors.
 You MUST fix names to their REAL form. Think about what real program, game, or app the user meant.
 

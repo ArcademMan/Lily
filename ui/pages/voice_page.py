@@ -3,8 +3,9 @@
 import subprocess
 import threading
 
+import qtawesome as qta
 from PySide6.QtCore import Qt, QTimer, Signal as QtSignal
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 
 from ui.widgets.state_indicator import StateIndicator
 
@@ -83,20 +84,41 @@ class VoicePage(QWidget):
         # ── Status footer (no card) ──
         footer = QHBoxLayout()
         footer.setContentsMargins(0, 8, 0, 8)
-        footer.setSpacing(16)
+        footer.setSpacing(12)
         footer.addStretch()
 
         self._status_ollama = QLabel("Ollama: ...")
         self._status_ollama.setStyleSheet("font-size: 11px; color: #888;")
         footer.addWidget(self._status_ollama)
 
-        sep = QLabel("|")
-        sep.setStyleSheet("font-size: 11px; color: #333;")
-        footer.addWidget(sep)
+        sep1 = QLabel("|")
+        sep1.setStyleSheet("font-size: 11px; color: #333;")
+        footer.addWidget(sep1)
 
         self._status_everything = QLabel("Everything: ...")
         self._status_everything.setStyleSheet("font-size: 11px; color: #888;")
         footer.addWidget(self._status_everything)
+
+        sep2 = QLabel("|")
+        sep2.setStyleSheet("font-size: 11px; color: #333;")
+        footer.addWidget(sep2)
+
+        self._status_tesseract = QLabel("Tesseract: ...")
+        self._status_tesseract.setStyleSheet("font-size: 11px; color: #888;")
+        footer.addWidget(self._status_tesseract)
+
+        # info button — opens welcome wizard
+        info_btn = QPushButton()
+        info_btn.setIcon(qta.icon("mdi6.information-outline", color="#666"))
+        info_btn.setFixedSize(24, 24)
+        info_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        info_btn.setToolTip("Dipendenze e download")
+        info_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; border-radius: 12px; padding: 0; }"
+            "QPushButton:hover { background: rgba(255,255,255,10); }"
+        )
+        info_btn.clicked.connect(self._show_deps_info)
+        footer.addWidget(info_btn)
 
         footer.addStretch()
         layout.addLayout(footer)
@@ -217,6 +239,13 @@ class VoicePage(QWidget):
                 status["everything"] = check_everything(es_path)
             except Exception:
                 status["everything"] = False
+            try:
+                tess = self._config.tesseract_path if self._config else "tesseract"
+                r = subprocess.run([tess, "--version"],
+                                   capture_output=True, text=True, timeout=3)
+                status["tesseract"] = r.returncode == 0
+            except Exception:
+                status["tesseract"] = False
             self._services_ready.emit(status)
 
         threading.Thread(target=_check, daemon=True).start()
@@ -228,6 +257,12 @@ class VoicePage(QWidget):
 
         self._status_ollama.setText(_fmt("Ollama", status.get("ollama", False)))
         self._status_everything.setText(_fmt("Everything", status.get("everything", False)))
+        self._status_tesseract.setText(_fmt("Tesseract", status.get("tesseract", False)))
+
+    def _show_deps_info(self):
+        from ui.welcome import WelcomeWizard
+        dlg = WelcomeWizard(self.window())
+        dlg.exec()
 
     def showEvent(self, event):
         super().showEvent(event)

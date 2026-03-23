@@ -97,6 +97,11 @@ class SettingsPage(QWidget):
         self._whisper.setCurrentText(config.whisper_model)
         ac.addLayout(_row("Modello Whisper", self._whisper))
 
+        self._whisper_device = QComboBox()
+        self._whisper_device.addItems(["cuda", "cpu"])
+        self._whisper_device.setCurrentText(getattr(config, "whisper_device", "cuda"))
+        ac.addLayout(_row("Whisper Device", self._whisper_device))
+
         self._mic = QComboBox()
         self._mic.addItem("Default", None)
         self._populate_mics()
@@ -233,6 +238,7 @@ class SettingsPage(QWidget):
 
         self._config.hotkey = self._hotkey.text().strip()
         self._config.whisper_model = self._whisper.currentText()
+        self._config.whisper_device = self._whisper_device.currentText()
         self._config.mic_device = self._mic.currentData()
         self._config.es_path = self._es_path.text().strip()
         self._config.tesseract_path = self._tesseract_path.text().strip()

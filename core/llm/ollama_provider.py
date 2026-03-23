@@ -24,7 +24,7 @@ class OllamaProvider(LLMProvider):
 
     def chat(self, model: str, messages: list[dict], format_json: bool = False,
              temperature: float = 0.0, num_predict: int = 128, timeout: int = 60,
-             thinking: bool = False) -> str:
+             thinking: bool = False, num_ctx: int = 8192) -> str:
         payload = {
             "model": model,
             "messages": messages,
@@ -37,8 +37,7 @@ class OllamaProvider(LLMProvider):
         # when not explicitly enabled — prevents wasting tokens on <think> blocks
         if not thinking:
             payload["think"] = False
-        # Assicura che il context window sia abbastanza grande per il prompt
-        payload["options"]["num_ctx"] = 8192
+        payload["options"]["num_ctx"] = num_ctx
         r = requests.post(f"{OLLAMA_BASE}/api/chat", json=payload, timeout=timeout)
         r.raise_for_status()
         data = r.json()

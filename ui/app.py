@@ -22,6 +22,23 @@ def run_app():
     app.setQuitOnLastWindowClosed(False)
     app.setStyleSheet(STYLESHEET)
 
+    # Show welcome wizard on first run
+    if not config.setup_done:
+        from ui.welcome import WelcomeWizard
+        wizard = WelcomeWizard()
+        wizard.exec()
+        config.setup_done = True
+        config.save()
+
+    # Download Whisper model if not cached
+    from ui.model_download import is_model_cached, ModelDownloadDialog
+    whisper_model = config.whisper_model
+    if not is_model_cached(whisper_model):
+        dlg = ModelDownloadDialog(whisper_model)
+        dlg.exec()
+        if not dlg.success:
+            print(f"[Whisper] Download fallito: {dlg.error_msg}")
+
     assistant = Assistant(config)
     bridge = SignalBridge(assistant)
 

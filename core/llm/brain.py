@@ -8,14 +8,18 @@ from core.llm.prompts import (
     SYSTEM_PROMPT_OLLAMA, SYSTEM_PROMPT_CLAUDE,
     PICK_PROMPT_OLLAMA, PICK_PROMPT_CLAUDE,
     RETRY_PROMPT, CHAT_SYSTEM_PROMPT, CHAIN_PROMPT,
+    _get_lily_paths_block,
 )
+
+
+_lily_paths_block = _get_lily_paths_block()
 
 
 def _get_prompts(config):
     provider = getattr(config, "provider", "ollama")
     if provider in ("anthropic", "openai", "gemini"):
-        return SYSTEM_PROMPT_CLAUDE, PICK_PROMPT_CLAUDE
-    return SYSTEM_PROMPT_OLLAMA, PICK_PROMPT_OLLAMA
+        return SYSTEM_PROMPT_CLAUDE + _lily_paths_block, PICK_PROMPT_CLAUDE
+    return SYSTEM_PROMPT_OLLAMA + _lily_paths_block, PICK_PROMPT_OLLAMA
 
 
 def _strip_think_tags(text: str) -> str:
@@ -85,7 +89,7 @@ def generate_chat_response(text: str, history: list[dict], config) -> str:
     chat_num_predict = getattr(config, "chat_num_predict", 384)
     thinking = getattr(config, "thinking_enabled", False)
 
-    system_prompt = CHAT_SYSTEM_PROMPT
+    system_prompt = CHAT_SYSTEM_PROMPT + _lily_paths_block
     if not thinking:
         system_prompt = _apply_thinking(system_prompt, config)
 
@@ -184,6 +188,7 @@ def pick_best_result(user_query: str, results: list[str], config,
             num_predict=max(32, getattr(config, "num_predict", 128) // 4),
             timeout=30,
             thinking=thinking,
+            num_ctx=16384,
         )
         raw = _strip_think_tags(raw)
         print(f"[LLM] Pick raw: {raw}")
