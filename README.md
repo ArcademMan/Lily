@@ -1,17 +1,39 @@
-# Lily — Assistente Vocale AI per Windows
+<p align="center">
+  <img src="./assets/icon.png" alt="Lily" width="180">
+</p>
 
-Assistente vocale in italiano per Windows con classificazione intent via LLM ed esecuzione automatica di azioni. Pipeline: hotkey → registrazione audio → trascrizione Whisper (GPU) → classificazione intent → esecuzione azione.
+<h1 align="center">Lily</h1>
 
-## Caratteristiche
+<p align="center">
+  <strong>Assistente vocale AI per Windows</strong><br>
+  Hotkey → trascrizione Whisper → classificazione intent LLM → esecuzione azione.
+</p>
 
-- **Pipeline vocale completa** — Premi Caps Lock, parla, rilascia. Lily trascrive, capisce e agisce.
-- **17 azioni disponibili** — Apri programmi, cartelle, siti web, controlla volume e multimedia, gestisci finestre, imposta timer, prendi screenshot, leggi lo schermo (OCR), detta testo, prendi appunti vocali e altro.
-- **Catena di comandi** — Comandi complessi in linguaggio naturale vengono decomposti in sotto-azioni sequenziali.
-- **Multi-provider LLM** — Ollama (locale, default), Anthropic Claude, OpenAI, Google Gemini.
-- **Trascrizione GPU** — Faster-Whisper con CUDA per trascrizione rapida e accurata.
-- **Text-to-Speech** — Edge TTS (cloud) con fallback Piper (offline).
-- **Conversazione** — Memoria conversazionale per dialoghi multi-turno.
-- **UI glassmorphism** — Interfaccia moderna in PySide6 con effetto vetro e blur nativo Windows.
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-Windows-blue" alt="Platform">
+  <img src="https://img.shields.io/badge/python-3.10+-yellow" alt="Python">
+  <img src="https://img.shields.io/badge/gui-PySide6-green" alt="GUI">
+  <img src="https://img.shields.io/badge/license-GPL--v3-lightgrey" alt="License">
+</p>
+
+---
+
+## Features
+
+| Azione | Descrizione |
+|--------|-------------|
+| **Programmi** | Apri, chiudi, cerca programmi, giochi, app UWP |
+| **Cartelle & File** | Apri cartelle, cerca file per nome |
+| **Web** | Apri URL o cerca su Google |
+| **Volume & Media** | Alza/abbassa volume, play/pausa/next/stop |
+| **Screenshot & OCR** | Cattura schermo, leggi e interpreta contenuto visibile |
+| **Finestre** | Snap, sposta monitor, minimizza, ripristina, nudge pixel |
+| **Dettatura** | Digita testo in una finestra target |
+| **Timer & Reminder** | Timer, sveglie, promemoria ricorrenti |
+| **Note vocali** | Salva, leggi, cancella appunti rapidi |
+| **Chat** | Conversazione libera con memoria multi-turno |
+| **Catena comandi** | Comandi complessi decomposti in sotto-azioni sequenziali |
+| **Sistema** | Info CPU, RAM, disco, processi, ora/data |
 
 ## Requisiti
 
@@ -22,84 +44,27 @@ Assistente vocale in italiano per Windows con classificazione intent via LLM ed 
 
 ## Installazione
 
+### Da sorgente
+
 ```bash
-git clone https://github.com/tu-utente/Lily.git
+git clone https://github.com/arcademman/Lily.git
 cd Lily
 pip install -r requirements.txt
-```
-
-### Dipendenze principali
-
-| Pacchetto | Uso |
-|---|---|
-| PySide6 | Interfaccia grafica |
-| faster-whisper | Trascrizione speech-to-text |
-| sounddevice | Cattura audio microfono |
-| keyboard | Hotkey globali |
-| requests | Comunicazione con Ollama/API |
-| edge-tts | Text-to-speech cloud |
-| pillow | Screenshot e immagini |
-| pytesseract | OCR per lettura schermo |
-
-Provider LLM opzionali: `anthropic`, `openai`, `google-generativeai`
-
-## Avvio
-
-```bash
 python main.py
 ```
 
-Al primo avvio verrà mostrato un wizard di configurazione per selezionare microfono, modello Whisper e provider LLM.
+### Da release
 
-## Utilizzo
+1. Scarica `Lily-Setup.exe` da [Releases](https://github.com/arcademman/Lily/releases)
+2. Esegui l'installer
+3. Avvia Lily dal menu Start
 
-1. **Premi Caps Lock** (o l'hotkey configurata) per iniziare a registrare
-2. **Parla** il tuo comando in italiano
-3. **Rilascia** il tasto — Lily trascrive, classifica l'intent e esegue l'azione
-
-### Esempi di comandi
-
-| Comando | Azione |
-|---|---|
-| "Apri Chrome" | Lancia Google Chrome |
-| "Alza il volume" | Aumenta il volume di sistema |
-| "Che ore sono?" | Dice l'ora corrente |
-| "Metti in pausa la musica" | Pausa riproduzione multimediale |
-| "Fai uno screenshot" | Cattura schermo negli appunti |
-| "Cosa c'è sullo schermo?" | Screenshot + OCR + interpretazione LLM |
-| "Scrivi 'ciao' su Notepad e invia" | Apre Notepad e digita il testo |
-| "Sposta Chrome a destra" | Snap della finestra a metà schermo |
-| "Timer 5 minuti" | Imposta un timer con notifica |
-| "Ricordami di bere ogni 30 minuti" | Reminder ricorrente |
-| "Salva nota: comprare il latte" | Salva un appunto vocale |
-| "Come funziona il codice su schermo?" | Legge e spiega il contenuto visibile |
-
-## Azioni disponibili
-
-| Intent | Descrizione |
-|---|---|
-| `open_program` | Avvia programmi, giochi, app UWP |
-| `open_folder` | Apre cartelle e directory |
-| `open_website` | Apre URL o cerca su Google |
-| `close_program` | Chiude programmi (graceful + fallback) |
-| `search_files` | Cerca file per nome |
-| `screenshot` | Cattura screenshot |
-| `screen_read` | Screenshot + OCR + interpretazione LLM |
-| `volume` | Controlla volume di sistema |
-| `media` | Play/pausa/next/stop multimedia |
-| `type_in` | Digita testo in una finestra target |
-| `window` | Snap, sposta, minimizza, ripristina finestre |
-| `timer` | Timer, sveglie, promemoria ricorrenti |
-| `time` | Ora e data corrente |
-| `chat` | Conversazione libera |
-| `notes` | Appunti vocali rapidi |
-| `self_config` | Modifica impostazioni di Lily |
-| `system_info` | Info su CPU, RAM, disco, processi |
+> Al primo avvio verrà mostrato un wizard per configurare microfono, modello Whisper e provider LLM.
 
 ## Provider LLM
 
 | Provider | Tipo | Configurazione |
-|---|---|---|
+|----------|------|----------------|
 | **Ollama** | Locale | Installa Ollama, scarica un modello (es. `llama3`) |
 | **Anthropic** | Cloud | API key Anthropic |
 | **OpenAI** | Cloud | API key OpenAI |
@@ -107,49 +72,21 @@ Al primo avvio verrà mostrato un wizard di configurazione per selezionare micro
 
 Il provider si configura dalla pagina LLM nell'interfaccia.
 
-## Struttura progetto
+## Build
 
-```
-Lily/
-├── main.py                 # Entry point
-├── config.py               # Configurazione thread-safe
-├── core/
-│   ├── assistant.py        # Coordinatore principale
-│   ├── search.py           # Ricerca programmi
-│   ├── signal.py           # Sistema segnali thread-safe
-│   ├── actions/            # 17 azioni eseguibili
-│   ├── llm/                # Provider LLM e classificazione intent
-│   │   ├── brain.py        # Classificazione intent e chat
-│   │   ├── prompts.py      # Prompt di sistema
-│   │   └── ...provider.py  # Provider (Ollama, Anthropic, OpenAI, Gemini)
-│   ├── voice/              # Pipeline vocale
-│   │   ├── hotkey.py       # Gestione hotkey
-│   │   ├── listener.py     # Registrazione audio
-│   │   ├── transcriber.py  # Trascrizione Whisper
-│   │   ├── tts.py          # Text-to-speech
-│   │   └── dictation.py    # Modalità dettatura
-│   └── utils/              # Utility (Win32, OCR, clipboard)
-└── ui/                     # Interfaccia PySide6
-    ├── app.py              # Inizializzazione app
-    ├── main_window.py      # Finestra principale frameless
-    ├── bridge.py           # Bridge segnali core → Qt
-    ├── style.py            # Stylesheet glassmorphism
-    └── pages/              # Pagine (Dashboard, LLM, Voice, Settings, Log)
+Per compilare come `.exe` standalone:
+
+```bash
+pip install pyinstaller
+pyinstaller main.spec
 ```
 
-## Estendere Lily
+Per creare l'installer (richiede [Inno Setup](https://jrsoftware.org/isinfo.php)):
 
-### Aggiungere una nuova azione
-
-1. Crea un file in `core/actions/` ereditando da `Action` (`core/actions/base.py`)
-2. Registra l'azione in `core/actions/__init__.py`
-3. Aggiorna il prompt di classificazione in `core/llm/brain.py`
-
-### Aggiungere un nuovo provider LLM
-
-1. Crea un provider ereditando da `LLMProvider` (`core/llm/base_provider.py`)
-2. Aggiungi la factory in `core/llm/__init__.py`
+```bash
+iscc installer.iss
+```
 
 ## Licenza
 
-Questo progetto è per uso personale.
+[GNU GPL v3](LICENSE)
