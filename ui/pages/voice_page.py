@@ -137,7 +137,7 @@ class VoicePage(QWidget):
         # GPU update timer
         self._gpu_timer = QTimer(self)
         self._gpu_timer.timeout.connect(self._fetch_gpu_info)
-        self._gpu_timer.start(5000)
+        self._gpu_timer.start(30000)
         self._gpu_info_ready.connect(self._gpu_label.setText)
         self._fetch_gpu_info()
 
@@ -266,7 +266,7 @@ class VoicePage(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        self._gpu_timer.start(5000)
+        self._gpu_timer.start(30000)
         self._services_timer.start(10000)
         self._check_services()
 

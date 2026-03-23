@@ -16,6 +16,7 @@ from ui.pages.llm_page import LLMPage
 from ui.pages.settings_page import SettingsPage
 from ui.pages.dashboard_page import DashboardPage
 from ui.pages.log_page import LogPage
+from ui.pages.chat_page import ChatPage
 
 
 class MainWindow(QMainWindow):
@@ -89,16 +90,18 @@ class MainWindow(QMainWindow):
 
         self._stack = AnimatedStack()
         self._voice_page = VoicePage(self.bridge, config=self.config)
+        self._chat_page = ChatPage(self.config, bridge=self.bridge, assistant=self.assistant)
         self._llm_page = LLMPage(self.config, self.assistant)
         self._settings_page = SettingsPage(self.config, self.assistant)
         self._dashboard_page = DashboardPage(config=self.config)
         self._log_page = LogPage(self.bridge)
 
-        self._stack.addWidget(self._voice_page)
-        self._stack.addWidget(self._llm_page)
-        self._stack.addWidget(self._settings_page)
-        self._stack.addWidget(self._dashboard_page)
-        self._stack.addWidget(self._log_page)
+        self._stack.addWidget(self._voice_page)      # 0 — Home (logo)
+        self._stack.addWidget(self._chat_page)        # 1 — Chat
+        self._stack.addWidget(self._llm_page)         # 2 — LLM
+        self._stack.addWidget(self._settings_page)    # 3 — Impostazioni
+        self._stack.addWidget(self._dashboard_page)   # 4 — Usage
+        self._stack.addWidget(self._log_page)         # 5 — Log
 
         body_layout.addWidget(self._stack)
         root.addWidget(body)
@@ -107,7 +110,7 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentIndex(index)
         if index == 0:
             self._voice_page._update_model_label()
-        elif index == 3:
+        elif index == 4:
             self._dashboard_page.refresh()
 
     def _center(self):

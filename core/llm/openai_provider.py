@@ -1,7 +1,7 @@
 import json
 import requests
 
-from core.llm.base_provider import LLMProvider
+from core.llm.base_provider import LLMProvider, retry_on_transient
 
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 
@@ -24,7 +24,7 @@ class OpenAIProvider(LLMProvider):
 
     def chat(self, model: str, messages: list[dict], format_json: bool = False,
              temperature: float = 0.0, num_predict: int = 128, timeout: int = 60, **kwargs) -> str:
-        use_model = self.model
+        use_model = model or self.model
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -33,18 +33,21 @@ class OpenAIProvider(LLMProvider):
 
         payload = {
             "model": use_model,
-            "max_tokens": num_predict,
+            "max_completion_tokens": num_predict,
             "temperature": temperature,
             "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
         }
         if format_json:
             payload["response_format"] = {"type": "json_object"}
 
-        r = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=timeout)
-        if r.status_code != 200:
-            print(f"[OpenAI] Errore {r.status_code}: {r.text}")
-        r.raise_for_status()
-        data = r.json()
+        def _do_request():
+            resp = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=timeout)
+            if resp.status_code != 200:
+                print(f"[OpenAI] Errore {resp.status_code}: {resp.text}")
+            resp.raise_for_status()
+            return resp.json()
+
+        data = retry_on_transient(_do_request)
 
         # Track token usage
         from core.llm.token_tracker import TokenTracker

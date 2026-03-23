@@ -38,7 +38,33 @@ def wait_for_confirmation(whisper_model, config, state_changed) -> bool:
     if not response:
         return False
 
+    # Fast keyword matching first, LLM fallback only if ambiguous
+    keyword_result = _keyword_confirm(response)
+    if keyword_result is not None:
+        print(f"[Sicurezza] Conferma via keyword: {keyword_result}")
+        return keyword_result
+
     return _llm_confirm(response, config)
+
+
+_YES_KEYWORDS = {"sì", "si", "ok", "vai", "fallo", "certo", "procedi", "confermo",
+                  "esatto", "certamente", "ovvio", "ovviamente", "assolutamente",
+                  "sì chiudi", "sì fallo", "ok vai", "yes"}
+_NO_KEYWORDS = {"no", "annulla", "stop", "lascia stare", "non farlo", "aspetta",
+                "fermati", "niente", "lascia", "no grazie", "nope", "non voglio"}
+
+
+def _keyword_confirm(response: str) -> bool | None:
+    """Fast yes/no detection via keywords. Returns None if ambiguous."""
+    text = response.strip().lower()
+    # Check exact match or phrase match
+    for kw in _YES_KEYWORDS:
+        if kw in text:
+            return True
+    for kw in _NO_KEYWORDS:
+        if kw in text:
+            return False
+    return None  # ambiguous — fall back to LLM
 
 
 def _llm_confirm(response: str, config) -> bool:

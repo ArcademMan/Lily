@@ -36,6 +36,8 @@ class TTSEngine:
         self._voice = voice
         self._enabled = enabled
         self._speaking = False
+        self._done_event = threading.Event()
+        self._done_event.set()  # starts as "done" (not speaking)
         self._lock = threading.Lock()
         self._piper = None
 
@@ -64,6 +66,7 @@ class TTSEngine:
             if self._speaking:
                 return
             self._speaking = True
+            self._done_event.clear()
         threading.Thread(target=self._run, args=(text,), daemon=True).start()
 
     def _run(self, text: str):
@@ -78,6 +81,7 @@ class TTSEngine:
         finally:
             with self._lock:
                 self._speaking = False
+            self._done_event.set()
             self.finished.emit()
 
     def _speak_edge(self, text: str):
@@ -145,6 +149,7 @@ class TTSEngine:
             pass
         with self._lock:
             self._speaking = False
+        self._done_event.set()
 
     def _play_audio(self, audio_bytes: bytes):
         """Riproduce audio in memoria tramite pygame."""

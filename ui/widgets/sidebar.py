@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel
 
 
 _PAGES = [
-    ("mdi6.microphone",       "Voce"),
+    ("mdi6.chat-outline",     "Chat"),
     ("mdi6.brain",            "LLM"),
     ("mdi6.cog-outline",      "Impostazioni"),
     ("mdi6.chart-bar",        "Usage"),
@@ -109,12 +109,12 @@ class Sidebar(QWidget):
         self._buttons: list[SidebarButton] = []
         for idx, (icon, tip) in enumerate(_PAGES):
             btn = SidebarButton(icon, tip, self)
-            btn.clicked.connect(lambda checked, i=idx: self._on_click(i))
+            btn.clicked.connect(lambda checked, i=idx + 1: self._on_click(i))
             layout.addWidget(btn)
             self._buttons.append(btn)
 
         layout.addStretch()
-        self.set_active(0)
+        self.set_active(0)  # Home — nessun bottone evidenziato
 
     def _on_click(self, index: int):
         self.set_active(index)
@@ -122,4 +122,4 @@ class Sidebar(QWidget):
 
     def set_active(self, index: int):
         for i, btn in enumerate(self._buttons):
-            btn.set_active(i == index)
+            btn.set_active(i == index - 1)

@@ -91,19 +91,24 @@ class TimerAction(Action):
                          is_reminder: bool) -> str:
         timer_id = f"rec_{label}_{seconds}"
 
+        cancel_event = threading.Event()
+
         def on_tick():
+            if cancel_event.is_set():
+                return
             winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
             notifier = _TimerNotifier.instance()
             msg = f"Promemoria ricorrente: {label}" if is_reminder else f"Timer ricorrente: {human_duration}"
             notifier.speak.emit(msg)
             notifier.notify.emit(msg)
-            # Rilancia il prossimo tick
-            with self._lock:
-                if timer_id in self._recurring_timers:
-                    next_timer = threading.Timer(seconds, on_tick)
-                    next_timer.daemon = True
-                    next_timer.start()
-                    self._recurring_timers[timer_id]["timer"] = next_timer
+            # Rilancia il prossimo tick solo se non cancellato
+            if not cancel_event.is_set():
+                next_timer = threading.Timer(seconds, on_tick)
+                next_timer.daemon = True
+                next_timer.start()
+                with self._lock:
+                    if timer_id in self._recurring_timers:
+                        self._recurring_timers[timer_id]["timer"] = next_timer
 
         timer = threading.Timer(seconds, on_tick)
         timer.daemon = True
@@ -112,10 +117,14 @@ class TimerAction(Action):
         with self._lock:
             # Cancella eventuale ricorrente precedente
             old = self._recurring_timers.pop(timer_id, None)
-            if old and old.get("timer"):
-                old["timer"].cancel()
+            if old:
+                if old.get("cancel"):
+                    old["cancel"].set()
+                if old.get("timer"):
+                    old["timer"].cancel()
             self._recurring_timers[timer_id] = {
                 "seconds": seconds, "label": label, "timer": timer,
+                "cancel": cancel_event,
             }
 
         print(f"[Timer] Ricorrente: ogni {human_duration} - '{label}'")
@@ -128,6 +137,8 @@ class TimerAction(Action):
                 t.cancel()
             self._active_timers.clear()
             for info in self._recurring_timers.values():
+                if info.get("cancel"):
+                    info["cancel"].set()
                 if info.get("timer"):
                     info["timer"].cancel()
             self._recurring_timers.clear()

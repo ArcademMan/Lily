@@ -1,6 +1,6 @@
 import requests
 
-from core.llm.base_provider import LLMProvider
+from core.llm.base_provider import LLMProvider, retry_on_transient
 
 OLLAMA_BASE = "http://localhost:11434"
 
@@ -38,9 +38,12 @@ class OllamaProvider(LLMProvider):
         if not thinking:
             payload["think"] = False
         payload["options"]["num_ctx"] = num_ctx
-        r = requests.post(f"{OLLAMA_BASE}/api/chat", json=payload, timeout=timeout)
-        r.raise_for_status()
-        data = r.json()
+        def _do_request():
+            resp = requests.post(f"{OLLAMA_BASE}/api/chat", json=payload, timeout=timeout)
+            resp.raise_for_status()
+            return resp.json()
+
+        data = retry_on_transient(_do_request)
 
         prompt_tokens = data.get("prompt_eval_count", 0)
         completion_tokens = data.get("eval_count", 0)

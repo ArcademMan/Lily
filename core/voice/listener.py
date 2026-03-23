@@ -20,7 +20,7 @@ class ListenWorker:
         self.model = model
         self.mic_device = mic_device
         self.model_size = model_size
-        self._running = True
+        self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
     def start(self):
@@ -67,8 +67,8 @@ class ListenWorker:
                                 dtype="float32", device=device,
                                 blocksize=1600, callback=callback):
                 print("[Mic] Registrazione iniziata...")
-                while self._running:
-                    time.sleep(0.05)
+                while not self._stop_event.is_set():
+                    self._stop_event.wait(0.05)
         except Exception as e:
             self.error.emit(f"Errore microfono: {e}")
             return None
@@ -85,7 +85,7 @@ class ListenWorker:
         return audio
 
     def stop(self):
-        self._running = False
+        self._stop_event.set()
 
     def isRunning(self) -> bool:
         return self._thread is not None and self._thread.is_alive()

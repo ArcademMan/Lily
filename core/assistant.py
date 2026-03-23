@@ -314,9 +314,7 @@ class Assistant:
                 self.result_ready.emit(text, f"⚠ {confirm_msg}")
                 self.tts.speak(confirm_msg)
 
-                _time.sleep(0.5)
-                while self.tts._speaking:
-                    _time.sleep(0.1)
+                self.tts._done_event.wait(timeout=15)
 
                 confirmed = wait_for_confirmation(
                     self._whisper_model, self.config, self.state_changed,
@@ -382,6 +380,74 @@ class Assistant:
         self.state_changed.emit("idle")
         self._busy = False
         self.notify.emit(message)
+
+    def process_text_chat(self, text: str) -> str:
+        """Pipeline completa per testo dalla chat (senza voce/dettatura/conferma vocale).
+        Restituisce il risultato come stringa."""
+        from core.llm.brain import classify_intent, decompose_chain
+        from core.actions import execute_action
+
+        try:
+            history = self._memory.get_messages()
+            intent = classify_intent(text, self.config, history=history)
+            intent["_original_text"] = text
+            intent_type = intent.get("intent", "unknown")
+            print(f"[Chat] Intent: {intent}")
+
+            # Intent che non hanno senso da chat testuale
+            if intent_type in ("dictation",):
+                return "La dettatura funziona solo via voce."
+
+            if intent_type == "type_in" and intent.get("parameter", "").strip().lower() == "dictate":
+                return "La dettatura su finestra funziona solo via voce."
+
+            # Catena di comandi
+            if intent_type == "chain":
+                steps = decompose_chain(text, self.config)
+                if not steps:
+                    return "Non sono riuscita a scomporre i comandi."
+
+                results = []
+                for i, step in enumerate(steps):
+                    step_intent = step.get("intent", "unknown")
+                    if step_intent == "wait":
+                        secs = float(step.get("parameter", "1"))
+                        _time.sleep(secs)
+                        continue
+                    step["_original_text"] = text
+                    result = execute_action(step, self.config, memory=self._memory)
+                    results.append(result)
+
+                final = ". ".join(results)
+                self._memory.add_user(text)
+                self._memory.add_assistant(final)
+                return final
+
+            # Copia log
+            if intent_type == "copy_log":
+                if not self._last_command_log:
+                    return "Non c'è nessun log da copiare."
+                from core.utils.clipboard import copy_to_clipboard
+                log_text = "\n".join(self._last_command_log)
+                copy_to_clipboard(log_text)
+                return f"Log copiato nella clipboard, {len(self._last_command_log)} righe."
+
+            # Esecuzione azione (include chat, open_program, ecc.)
+            result = execute_action(intent, self.config, memory=self._memory)
+            print(f"[Chat] Risultato: {result}")
+
+            # Aggiorna TTS se self_config
+            if intent_type == "self_config":
+                self.tts.enabled = self.config.tts_enabled
+                self.tts.voice = self.config.tts_voice
+
+            self._memory.add_user(text)
+            self._memory.add_assistant(result)
+            return result
+
+        except Exception as e:
+            print(f"[Chat] Errore: {e}")
+            return f"Errore: {e}"
 
     def apply_config(self):
         """Applica le modifiche alla configurazione. Chiamato da SettingsPage dopo save."""

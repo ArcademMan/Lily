@@ -15,6 +15,12 @@ from core.llm.prompts import (
 _lily_paths_block = _get_lily_paths_block()
 
 
+def _get_model(config) -> str:
+    """Restituisce il modello corretto per il provider attivo."""
+    provider = getattr(config, "provider", "ollama")
+    return getattr(config, f"{provider}_model", "") or config.ollama_model
+
+
 def _get_prompts(config):
     provider = getattr(config, "provider", "ollama")
     if provider in ("anthropic", "openai", "gemini"):
@@ -28,13 +34,35 @@ def _strip_think_tags(text: str) -> str:
 
 def _parse_json(text: str) -> dict | None:
     start = text.find("{")
-    end = text.find("}", start)
-    if start == -1 or end == -1:
+    if start == -1:
         return None
-    try:
-        return json.loads(text[start:end + 1])
-    except json.JSONDecodeError:
-        return None
+    # Find the balanced closing brace (handles nested objects)
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape:
+            escape = False
+            continue
+        if ch == '\\' and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start:i + 1])
+                except json.JSONDecodeError:
+                    return None
+    return None
 
 
 def _apply_thinking(prompt: str, config) -> str:
@@ -61,7 +89,7 @@ def classify_intent(text: str, config, history: list[dict] = None) -> dict:
         messages.append({"role": "user", "content": text})
 
         raw = provider.chat(
-            model=config.ollama_model,
+            model=_get_model(config),
             messages=messages,
             format_json=True,
             num_predict=num_predict,
@@ -99,7 +127,7 @@ def generate_chat_response(text: str, history: list[dict], config) -> str:
 
     try:
         raw = provider.chat(
-            model=config.ollama_model,
+            model=_get_model(config),
             messages=messages,
             format_json=False,
             temperature=0.7,
@@ -124,7 +152,7 @@ def decompose_chain(text: str, config) -> list[dict]:
 
     try:
         raw = provider.chat(
-            model=config.ollama_model,
+            model=_get_model(config),
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": text},
@@ -182,7 +210,7 @@ def pick_best_result(user_query: str, results: list[str], config,
 
     try:
         raw = provider.chat(
-            model=config.ollama_model,
+            model=_get_model(config),
             messages=[{"role": "user", "content": prompt}],
             format_json=True,
             num_predict=max(32, getattr(config, "num_predict", 128) // 4),
@@ -218,7 +246,7 @@ def suggest_retry_terms(query: str, search_terms: list[str],
     try:
         print(f"[LLM] Nessun risultato, chiedo termini alternativi...")
         raw = provider.chat(
-            model=config.ollama_model,
+            model=_get_model(config),
             messages=[{"role": "user", "content": prompt}],
             format_json=True,
             num_predict=64,

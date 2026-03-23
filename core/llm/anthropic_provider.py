@@ -1,7 +1,7 @@
 import json
 import requests
 
-from core.llm.base_provider import LLMProvider
+from core.llm.base_provider import LLMProvider, retry_on_transient
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -23,8 +23,7 @@ class AnthropicProvider(LLMProvider):
 
     def chat(self, model: str, messages: list[dict], format_json: bool = False,
              temperature: float = 0.0, num_predict: int = 128, timeout: int = 60, **kwargs) -> str:
-        # Use the provider's model, ignore the config model for Anthropic
-        use_model = self.model
+        use_model = model or self.model
 
         headers = {
             "x-api-key": self.api_key,
@@ -54,11 +53,14 @@ class AnthropicProvider(LLMProvider):
         if system_text:
             payload["system"] = system_text
 
-        r = requests.post(ANTHROPIC_API_URL, headers=headers, json=payload, timeout=timeout)
-        if r.status_code != 200:
-            print(f"[Anthropic] Errore {r.status_code}: {r.text}")
-        r.raise_for_status()
-        data = r.json()
+        def _do_request():
+            resp = requests.post(ANTHROPIC_API_URL, headers=headers, json=payload, timeout=timeout)
+            if resp.status_code != 200:
+                print(f"[Anthropic] Errore {resp.status_code}: {resp.text}")
+            resp.raise_for_status()
+            return resp.json()
+
+        data = retry_on_transient(_do_request)
 
         # Track token usage
         from core.llm.token_tracker import TokenTracker

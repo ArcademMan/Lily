@@ -1,7 +1,7 @@
 import json
 import requests
 
-from core.llm.base_provider import LLMProvider
+from core.llm.base_provider import LLMProvider, retry_on_transient
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
@@ -22,7 +22,7 @@ class GeminiProvider(LLMProvider):
 
     def chat(self, model: str, messages: list[dict], format_json: bool = False,
              temperature: float = 0.0, num_predict: int = 128, timeout: int = 60, **kwargs) -> str:
-        use_model = self.model
+        use_model = model or self.model
         url = f"{GEMINI_API_BASE}/{use_model}:generateContent"
 
         # Convert messages: extract system instruction, build contents
@@ -51,16 +51,19 @@ class GeminiProvider(LLMProvider):
         if format_json:
             payload["generationConfig"]["responseMimeType"] = "application/json"
 
-        r = requests.post(
-            url,
-            headers={"Content-Type": "application/json", "x-goog-api-key": self.api_key},
-            json=payload,
-            timeout=timeout,
-        )
-        if r.status_code != 200:
-            print(f"[Gemini] Errore {r.status_code}: {r.text}")
-        r.raise_for_status()
-        data = r.json()
+        def _do_request():
+            resp = requests.post(
+                url,
+                headers={"Content-Type": "application/json", "x-goog-api-key": self.api_key},
+                json=payload,
+                timeout=timeout,
+            )
+            if resp.status_code != 200:
+                print(f"[Gemini] Errore {resp.status_code}: {resp.text}")
+            resp.raise_for_status()
+            return resp.json()
+
+        data = retry_on_transient(_do_request)
 
         # Track token usage
         from core.llm.token_tracker import TokenTracker
