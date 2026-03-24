@@ -7,6 +7,20 @@ from core.search import search_everything, expand_search_terms
 
 
 class OpenFolderAction(Action):
+    TOOL_SCHEMA = {
+        "name": "open_folder",
+        "description": "Cerca e apri una cartella sul PC. query = soggetto principale (es. 'Lethal Company' non 'Video')",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Soggetto principale della cartella (es. 'Lethal Company')"},
+                "search_terms": {"type": "array", "items": {"type": "string"}, "description": "Nomi alternativi"},
+                "parameter": {"type": "string", "description": "Path esatto se gia' noto (opzionale)"}
+            },
+            "required": ["query"]
+        }
+    }
+
     def execute(self, intent: dict, config, pick_callback=None, **kwargs) -> str:
         # Direct path: if parameter contains a valid folder path, open it directly
         direct_path = intent.get("parameter", "").strip()

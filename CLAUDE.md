@@ -1,143 +1,83 @@
 # Lily - Assistente Vocale
 
-## Panoramica
+## TODO — Bug e criticita
 
-Assistente vocale in italiano per Windows con pipeline: hotkey → registrazione audio → trascrizione Whisper (GPU) → classificazione intent via LLM (Ollama/Claude) → esecuzione azione. UI in PySide6 con design glassmorphism.
+### Sicurezza
 
-## Struttura progetto
+- [x] **Command injection in `run_command.py`** — `_is_safe_command()` aggirabile: `get-date; rm -rf C:\Users` passa perche `startsWith("get-")` e true, e i pattern bloccati usano path Unix (`/`) non Windows (`C:\`). In agent mode il LLM genera la query, rischio concreto. Fix: splittare il comando su `;`, `&&`, `||`, `|` e validare ogni segmento indipendentemente. Aggiungere pattern Windows ai blocchi (`del`, `rmdir`, `format`, path con `C:\`).
 
-- `core/` — logica principale (assistant, search, signal)
-- `core/voice/` — pipeline vocale (listener, transcriber, hotkey)
-- `core/llm/` — provider LLM (Ollama, Anthropic, brain, token tracker)
-- `core/actions/` — azioni eseguibili (9 tipi: program, folder, website, screenshot, timer, volume, ecc.)
-- `ui/` — interfaccia PySide6 (pages, widgets, bridge, tray)
-- `config.py` — gestione configurazione
-- `main.py` — entry point
+- [x] **PowerShell injection in `program.py`** — `_try_launch_uwp()` inietta `query` direttamente nella stringa PowerShell senza escaping. In agent mode il LLM costruisce la query e puo iniettare codice arbitrario (`*" }}; Start-Process calc.exe; $x = "`). Fix: usare `-replace` o passare il parametro via variabile d'ambiente / argomento separato.
 
-## Convenzioni
+### Crash e corruzione dati
 
-- Lingua: italiano (Whisper hardcoded `language="it"`)
-- Nuove azioni: ereditare da `core/actions/base.py` → registrare in `core/actions/__init__.py` → aggiornare prompt in `core/llm/brain.py`
-- Nuovi provider LLM: ereditare da `core/llm/base_provider.py` → aggiungere factory in `core/llm/__init__.py`
-- Segnali core→UI: usare `core/signal.py` + `ui/bridge.py`
+- [x] **Conferma vocale rotta con provider cloud** — `confirmation.py:87` hardcoda `config.ollama_model` nella chiamata `provider.chat()`. Se il provider attivo e Anthropic/OpenAI/Gemini, passa un nome modello Ollama all'API cloud → HTTP 400 → conferma fallisce silenziosamente → azione sempre annullata senza spiegazione. Fix: usare `_get_model(config)` dal brain.
 
----
+- [x] **GDI handle leak in `screenshot.py`** — `capture_window()` acquisisce 3 handle GDI (`GetWindowDC`, `CreateCompatibleDC`, `CreateCompatibleBitmap`) rilasciate solo a fine funzione. Se `PrintWindow`/`GetDIBits`/`QImage` lanciano eccezione, il blocco `except` ritorna `None` senza rilasciarle. Con `screen_read` frequenti si esaurisce il quota GDI (10.000/processo) → glitch grafici o crash. Fix: try/finally che rilascia tutte le handle acquisite.
 
-## Feature implementate
+- [x] **Clipboard bloccato system-wide** — `clipboard.py` path ctypes: `OpenClipboard(0)` seguito da operazioni senza try/finally. Se `GlobalAlloc`/`GlobalLock`/`wcscpy_s` lancia eccezione, `CloseClipboard()` non viene mai chiamato. Windows permette un solo processo alla volta sul clipboard → resta bloccato system-wide fino al kill del processo. Fix: wrappare tutto in try/finally con `CloseClipboard()`.
 
-- Text-to-Speech (Edge TTS + fallback Piper locale)
-- Modalità conversazione (intent `chat` con personalità)
-- Modalità dettatura (segmenti + dettatura su finestra target)
-- Controllo multimedia (play/pausa, next, previous, stop)
-- Memoria conversazionale globale (classify_intent + chat)
-- Lista comandi in chat ("cosa puoi fare?")
-- Scrivi su finestra ("vai su X e scrivi Y e invia")
-- Lettura schermo (screenshot + OCR Tesseract + interpretazione LLM)
-- Gestione finestre (snap, sposta monitor, minimizza, ripristina, chiudi cartelle, nudge pixel)
-- Conferma vocale per azioni pericolose
-- Correzione nomi Whisper + parametri per modello
-- Ricerca intelligente (retry LLM, expand terms, fuzzy)
-- Pick con contesto (intent completo, esclusioni utente)
-- Messaggi parlabili (italiano, nomi puliti)
-- Caps Lock come hotkey (alias localizzati)
-- Chiusura programmi gentile (WM_CLOSE + fallback taskkill)
-- Stato Ollama in UI
-- Config thread-safe (RLock) + error handling JSON corrotto
-- `find_window` unificata in `core/utils/win32.py`
-- Quick notes vocali (salva, leggi, cancella note con timestamp)
-- Catena di comandi in linguaggio naturale (decomposizione LLM in sotto-azioni sequenziali)
+- [ ] **QThread segfault in `chat_page.py`** — `_ChatWorker` (QThread): il riferimento Python viene droppato (`self._worker = None`) in `_on_chat_response` mentre il thread C++ potrebbe ancora essere attivo. PySide6 puo fare segfault se il wrapper Python viene garbage-collected prima che il QThread C++ finisca il cleanup. Fix: chiamare `self._worker.wait()` prima di droppare il riferimento, o usare `deleteLater()`.
 
----
+- [ ] **TOCTOU in `memory.py` e `notes.py`** — `add_memory_entry()` fa `load()` (con lock), rilascia, poi `save()` (con lock). Due thread concorrenti leggono lo stesso vecchio contenuto → uno sovrascrive l'aggiunta dell'altro, perdendo un entry. Stessa race di `config.py` (gia nota) ma qui non documentata. Fix: singolo lock che copre load+modifica+save, oppure scrittura atomica con `.tmp` + `os.replace()`.
 
-## TODO — Feature da implementare
+- [ ] **`LogCapture` incompleto** — `log_capture.py`: mancano `__getattr__`, `fileno()`, `isatty()`, `encoding`, `errors`. Librerie che interrogano `sys.stderr` (sounddevice, faster-whisper, pygame) crashano con `AttributeError`. Fix: aggiungere `__getattr__` che delega all'oggetto originale, come gia fatto in `_LogTee`.
 
-- [ ] Monitoring passivo / Watchdog — "avvisami quando il download finisce", monitor cartella/processo/CPU
-- [ ] Automazione visiva — "quando vedi la scritta X sullo schermo, avvisami" — polling periodico con OCR, notifica vocale. Monitoraggio visivo dello schermo
-- [ ] Multi-step visivi — "cerca su Google Immagini un gatto e scarica la prima immagine" — azioni concatenate con feedback visivo (screenshot → OCR → decisione → azione)
+### Race condition
+
+- [ ] **`_busy` bool senza lock in `assistant.py`** — `_start_listening()`: il check `if self._busy` e l'assegnazione `self._busy = True` sono due operazioni separate nel callback hotkey. Key bounce → due pipeline parallele → due risposte TTS sovrapposte. Fix: usare `threading.Lock` o `threading.Event` per `_busy`.
+
+- [ ] **`sys.stdout` swap non thread-safe** — `assistant.py:_process()`: sostituisce `sys.stdout` con `_LogTee` in un daemon thread. Se voce e chat sono attivi simultaneamente, due thread swappano `sys.stdout` concorrentemente → log persi o corrotti. Fix: usare un lock dedicato per lo swap, o passare il tee come argomento invece di modificare lo stato globale.
+
+- [ ] **`_last_context` globale non protetto** — `core/actions/base.py`: dict globale condiviso tra thread. `clear()` + `update()` non sono atomici. Due comandi in rapida successione possono lasciare il dict in stato parziale. Fix: aggiungere `threading.Lock`.
+
+- [x] **`_active_proc` registrato dopo lo spawn** — `run_command.py`: il processo viene creato con `Popen()`, poi registrato in `_active_proc` sotto lock. Se `kill_active()` viene chiamato tra spawn e registrazione, il processo non viene terminato e gira fino al timeout (30s). Fix: lock acquisito prima di `Popen()`.
+
+- [ ] **Singleton `_TimerNotifier` non thread-safe** — `timer_action.py`: classic check-then-act su `_instance is None`. Due timer che scadono simultaneamente possono creare due istanze → notifiche perse. Fix: usare un `threading.Lock` nel classmethod `instance()`.
+
+- [ ] **`TokenTracker._load()` senza lock** — `token_tracker.py`: `_load()` chiamata dal `__new__` senza `self._lock`. Se due thread chiamano `TokenTracker()` simultaneamente, entrambi entrano in `__new__`, passano il check `_instance is None`, e scrivono su `self._data` concorrentemente. Fix: lock nel `__new__` o usare un module-level lock per la costruzione del singleton.
+
+### Deadlock
+
+- [ ] **`Signal._lock` non rientrante** — `signal.py`: usa `threading.Lock` (non `RLock`). Se un callback chiamato da `emit()` invoca `disconnect()` sullo stesso segnale → deadlock. Fix: usare `RLock`, oppure deferire le disconnect a dopo l'iterazione.
+
+- [ ] **Stop durante conferma vocale** — `assistant.py`: `_stop_listening` resetta `_busy=False` mentre `wait_for_confirmation` e ancora bloccato su `record_until_silence` (timeout 7s). L'hotkey successivo apre un secondo stream audio → conflitto driver audio o silenzio. Dopo il timeout la vecchia pipeline continua con `confirmed=False`. Fix: segnalare a `wait_for_confirmation` di abortire (via Event), e non resettare `_busy` finche il thread non e effettivamente terminato.
 
 ---
 
 ## TODO — Migliorie codebase
 
-### Critici (stabilità) — COMPLETATI
+### Medi (qualita / UX)
 
-- [x] **Provider cloud ignorano il parametro model** — `anthropic_provider.py`, `openai_provider.py`, `gemini_provider.py`
-  Fix: `use_model = model or self.model` in tutti e tre i provider.
+- [ ] **System prompt troppo lungo** — `prompts.py`: 124 righe con esempi ridondanti. Ogni `classify_intent` consuma ~300 token solo di prompt. Condensare gli esempi, auto-generare la lista intent dal registry delle azioni.
 
-- [x] **JSON parsing fragile in brain.py** — `brain.py:_parse_json()`
-  Fix: parser con conteggio depth bilanciato che gestisce `{}` annidati e stringhe con escape.
+- [ ] **search_terms non normalizzati** — `brain.py`: il LLM puo restituire termini duplicati con case diverso. Fix: `terms = list({t.strip().lower() for t in terms})`.
 
-- [x] **Thread-safety mancante nel listener** — `listener.py`
-  Fix: sostituito bool `_running` con `threading.Event` (`_stop_event`).
+- [ ] **Nessuna cache sui risultati di ricerca** — `search.py`: "apri Chrome" due volte → ricerca Everything rifatta da zero. Fix: `functools.lru_cache` con TTL 30s.
 
-### Alti (efficienza / robustezza) — COMPLETATI
+- [ ] **pick_best_result sempre via LLM** — `brain.py`: anche con match quasi perfetto (query "Chrome", risultato `chrome.exe`), chiama il LLM. Fix: fuzzy match locale (`difflib.SequenceMatcher`) per casi ovvi, LLM solo per ambigui.
 
-- [x] **Busy-wait sulla TTS** — `assistant.py` + `tts.py`
-  Fix: aggiunto `_done_event` (threading.Event) alla TTS, l'assistant usa `event.wait(timeout=15)` invece del polling loop.
+- [ ] **Config non atomica** — `config.py`: crash durante `json.dump()` → file vuoto/corrotto. Fix: scrivere su `.tmp` + `os.replace()`.
 
-- [x] **Conferma vocale chiama il LLM per un sì/no** — `confirmation.py`
-  Fix: aggiunto keyword matching veloce (`_keyword_confirm`) con set YES/NO, fallback LLM solo se ambiguo.
+- [ ] **Log page accumula tutto in memoria** — `log_page.py`: lista `_lines` cresce senza limiti. Fix: cap a ~5000 righe.
 
-- [x] **Nessun retry sulle chiamate di rete** — tutti i provider LLM
-  Fix: `retry_on_transient()` in `base_provider.py` con backoff 0.5s/1s/2s. Retry solo su ConnectionError, Timeout, HTTP 429/5xx.
+- [ ] **Dashboard refresh eccessivo** — `dashboard_page.py`: si aggiorna ogni 3s anche senza cambiamenti. Fix: aggiornare solo su segnale dal core.
 
-- [x] **nvidia-smi ogni 5 secondi** — `voice_page.py`
-  Fix: intervallo portato a 30 secondi.
+- [ ] **print() ovunque invece di logging** — tutto il codebase. Fix: `logging.getLogger(__name__)` con livelli.
 
-- [x] **Memory leak nei timer ricorrenti** — `timer_action.py`
-  Fix: aggiunto `cancel_event` (threading.Event) per ogni timer ricorrente, controllato prima di creare il prossimo tick.
+- [ ] **CUDA DLL path manipulation ripetuta** — `transcriber.py`: aggiunge directory CUDA al PATH e chiama `os.add_dll_directory()` ad ogni reload. Fix: farlo una sola volta all'avvio.
 
-- [x] **Conversation memory non thread-safe** — `conversation.py`
-  Fix: aggiunto `threading.Lock` su tutte le operazioni di lettura/scrittura di `_history`.
-
-### Medi (qualità / UX)
-
-- [ ] **System prompt troppo lungo** — `prompts.py`
-  Il prompt per Ollama è 124 righe con molti esempi ridondanti. Ogni chiamata `classify_intent` consuma ~300 token solo di prompt. Condensare gli esempi, e auto-generare la lista degli intent disponibili dal registry delle azioni così non va aggiornata a mano.
-
-- [ ] **search_terms non normalizzati** — `brain.py`
-  Il LLM può restituire termini duplicati con case diverso (es. `["Elden Ring", "elden ring"]`). La ricerca li tratta come distinti e fa lavoro doppio. Fix: `terms = list({t.strip().lower() for t in terms})`.
-
-- [ ] **Nessuna cache sui risultati di ricerca** — `search.py`
-  Se l'utente dice "apri Chrome" due volte, la ricerca su Everything viene rifatta da zero ogni volta. Un `functools.lru_cache` con TTL di 30 secondi eliminerebbe ricerche duplicate.
-
-- [ ] **pick_best_result sempre via LLM** — `brain.py`
-  Anche quando c'è un match quasi perfetto (es. query "Chrome" e risultato `chrome.exe`), il codice chiama il LLM per scegliere tra i risultati. Un fuzzy match locale (es. `difflib.SequenceMatcher`) potrebbe risolvere i casi ovvi istantaneamente, e chiamare il LLM solo quando ci sono più candidati ambigui.
-
-- [ ] **Config non atomica** — `config.py`
-  Se il processo crasha durante `json.dump()`, il file settings può rimanere vuoto o corrotto (il file viene aperto in write mode che lo tronca prima di scrivere). Fix: scrivere su file `.tmp` e poi `os.replace()` che su Windows è atomico.
-
-- [ ] **Log page accumula tutto in memoria** — `log_page.py`
-  La lista `_lines` cresce senza limiti. In sessioni lunghe (ore di uso) può arrivare a migliaia di righe. Fix: cap a ~5000 righe, eliminando le più vecchie.
-
-- [ ] **Dashboard refresh eccessivo** — `dashboard_page.py`
-  Si aggiorna ogni 3 secondi con un timer, anche se non è cambiato nulla. Ridisegna tutta la UI (layout, chart, righe modelli) inutilmente. Fix: aggiornare solo quando arriva un segnale dal core che indica una nuova chiamata LLM completata.
-
-- [ ] **print() ovunque invece di logging** — tutto il codebase
-  Debug, errori e info usano tutti `print()`. Non c'è modo di filtrare per livello, redirectare su file, o disabilitare in produzione. Fix: `logging.getLogger(__name__)` con livelli DEBUG/INFO/WARNING.
-
-- [ ] **CUDA DLL path manipulation ripetuta** — `transcriber.py`
-  Ogni volta che il modello Whisper viene caricato, il codice aggiunge directory CUDA al PATH di sistema e chiama `os.add_dll_directory()`. Questo modifica stato globale del processo e il PATH cresce ad ogni reload. Fix: farlo una sola volta all'avvio dell'app.
-
-- [ ] **screen_read usa sempre il modello Ollama** — `screen_read.py`
-  La lettura schermo (OCR + interpretazione LLM) usa sempre `config.ollama_model` hardcodato, anche se il provider attivo è Anthropic o OpenAI. Fix: usare il provider e modello configurati dall'utente.
+- [ ] **screen_read usa sempre il modello Ollama** — `screen_read.py`: hardcoda `config.ollama_model` anche se il provider attivo e un altro. Fix: usare il provider e modello configurati.
 
 ### Architetturali (refactor futuro)
 
-- [ ] **State machine esplicita** — `assistant.py`
-  Lo stato è tracciato con due bool (`_busy`, `_processing`) che possono assumere combinazioni incoerenti. Un Enum esplicito (IDLE → RECORDING → PROCESSING → EXECUTING → IDLE) renderebbe le transizioni chiare e prevenibili i bug di stato.
+- [ ] **State machine esplicita** — `assistant.py`: stato tracciato con due bool (`_busy`, `_processing`). Fix: Enum esplicito (IDLE → RECORDING → PROCESSING → EXECUTING → IDLE).
 
-- [ ] **Auto-discovery delle azioni** — `core/actions/__init__.py`
-  Aggiungere una nuova azione richiede: creare la classe, registrarla manualmente in `__init__.py`, aggiornare il prompt in `prompts.py`. Un decoratore `@register_action("program")` permetterebbe di fare tutto nel file dell'azione.
+- [ ] **Auto-discovery delle azioni** — `core/actions/__init__.py`: aggiungere azione richiede 3 passi manuali. Fix: decoratore `@register_action("program")`.
 
-- [ ] **Sync automatica prompt ↔ azioni** — `prompts.py`
-  La lista degli intent nel system prompt è scritta a mano e può andare fuori sync con le azioni reali. Generarla automaticamente dal registry eliminerebbe il problema.
+- [ ] **Sync automatica prompt-azioni** — `prompts.py`: lista intent scritta a mano, puo andare fuori sync. Fix: generarla dal registry.
 
-- [ ] **ThreadPoolExecutor** — tutto il codebase
-  Ogni task lancia un daemon thread singolo che, se crasha, perde l'eccezione silenziosamente. Un `ThreadPoolExecutor` gestisce il pool, cattura le eccezioni, e permette di aspettare i risultati con `future.result()`.
+- [ ] **ThreadPoolExecutor** — tutto il codebase: daemon thread singoli che perdono eccezioni. Fix: `ThreadPoolExecutor` con `future.result()`.
 
-- [ ] **TTS asyncio persistente** — `tts.py`
-  Ogni chiamata a `speak()` crea un nuovo event loop asyncio (`asyncio.new_event_loop()`), lo usa per una singola generazione Edge TTS, e lo distrugge. Creare/distruggere loop ha overhead. Fix: un singolo loop persistente su un thread dedicato, o semplicemente `asyncio.run()`.
+- [ ] **TTS asyncio persistente** — `tts.py`: crea/distrugge event loop ad ogni `speak()`. Fix: loop persistente su thread dedicato.
 
-- [ ] **Escaping query PowerShell** — `program.py`
-  La funzione `_try_launch_uwp()` inserisce la query direttamente nella stringa PowerShell senza escaping. Il rischio reale è quasi zero (l'input viene dalla voce dell'utente, non da fonti esterne), ma per correttezza andrebbe sanitizzato.
+- [ ] **Escaping query PowerShell** — `program.py`: query inserita senza escaping nella stringa PowerShell. Fix: sanitizzare input.

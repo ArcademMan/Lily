@@ -59,6 +59,7 @@ TYPE must be one of:
   "nudge_up", "nudge_down", "nudge_left", "nudge_right" = move window slightly in a direction. Append pixel amount: "nudge_down_100" for 100px. Default is 50px. "un po'" = 50, "molto" = 200, or user can specify exact pixels.
   Keywords: "chiudi le cartelle", "minimizza tutto", "mostra desktop", "sposta a sinistra/destra", "sposta sull'altro schermo", "ripristina", "minimizza", "più in alto", "più in basso", "più a sinistra", "più a destra"
 - screen_read: user wants to READ/SEE what's on a window or screen. Captures the window and reads the text via OCR. query = window/program name. parameter = what to look for or question about the content. Keywords: "leggi", "cosa c'è scritto", "leggimi", "cosa vedi su", "ultimo messaggio", "cosa dice"
+- terminal_read: user wants to READ the output of Lily's INTEGRATED TERMINAL (the terminal tab inside Lily). No need for a window name. parameter = what to look for (optional). Keywords: "leggi il terminale", "cosa c'è sul terminale", "output del terminale", "cosa dice il terminale". IMPORTANT: use this ONLY when the user refers to Lily's own terminal, NOT external terminal windows.
 - type_in: user wants to GO TO a specific window and optionally TYPE text there. query = window/program name to focus. parameter = the text to type. If the user wants to SEND/SUBMIT the message, ALWAYS append " e invia" at the END of parameter. Keywords: "vai su", "vai sul", "scrivi su", "scrivi nel", "scrivi a", "digita su", "invia a/su"
   IMPORTANT for type_in: when user says "invia" or "e invia" ANYWHERE in the sentence, put " e invia" at the END of parameter.
   CRITICAL: "invia X", "invia su X", "invia a X" at the START of a sentence = ALWAYS type_in, NEVER chain, NEVER chat. The app name follows "invia" directly or after "su/a".
@@ -110,6 +111,9 @@ Examples:
 - "sposta Discord più in basso" -> {"intent": "window", "query": "Discord", "search_terms": [], "parameter": "nudge_down"}
 - "leggimi l'ultimo messaggio su WhatsApp" -> {"intent": "screen_read", "query": "WhatsApp", "search_terms": [], "parameter": "ultimo messaggio"}
 - "cosa c'è scritto su Discord" -> {"intent": "screen_read", "query": "Discord", "search_terms": [], "parameter": ""}
+- "leggi il terminale" -> {"intent": "terminal_read", "query": "", "search_terms": [], "parameter": ""}
+- "cosa c'è sul terminale" -> {"intent": "terminal_read", "query": "", "search_terms": [], "parameter": ""}
+- "cosa dice il terminale, ci sono errori?" -> {"intent": "terminal_read", "query": "", "search_terms": [], "parameter": "errori"}
 - "vai sul terminale e scrivi ciao e invia" -> {"intent": "type_in", "query": "terminale", "search_terms": [], "parameter": "ciao e invia"}
 - "vai su Sublime" -> {"intent": "type_in", "query": "Sublime", "search_terms": [], "parameter": ""}
 - "invia a WhatsApp questo messaggio è da Lily" -> {"intent": "type_in", "query": "WhatsApp", "search_terms": [], "parameter": "questo messaggio è da Lily e invia"}
@@ -149,6 +153,7 @@ volume: parameter=up/down/mute
 media: parameter=play_pause/next/previous/stop
 window: parameter=close_explorer/minimize_all/show_desktop/snap_left/snap_right/move_monitor/minimize/restore/close_all/nudge_up/nudge_down/nudge_left/nudge_right(append pixels). query=program name when needed
 screen_read: OCR window. query=window, parameter=what to look for
+terminal_read: read Lily's integrated terminal output. parameter=what to look for (optional). Keywords: "leggi il terminale", "cosa c'è sul terminale", "output del terminale"
 type_in: go to window+type. query=window, parameter=text VERBATIM. "invia" anywhere->append " e invia" at END. No text after app->parameter="dictate"
 time: current time/date
 dictation: voice typing. "scrivi [TEXT]"->query=TEXT
@@ -293,6 +298,19 @@ COMANDI DISPONIBILI (se l'utente chiede cosa puoi fare, elencali in modo discors
 - Conversazione: puoi fare domande su qualsiasi cosa"""
 
 
+def _terminal_read_prompt(terminal_text="", user_request="", **_) -> str:
+    return f"""Sei Lily, un'assistente vocale. L'utente ti ha chiesto di leggere il terminale integrato.
+Ecco l'output recente del terminale:
+
+---
+{terminal_text}
+---
+
+{user_request}
+
+Rispondi in italiano in modo conciso e naturale. Se l'utente ha chiesto qualcosa di specifico (es. "ci sono errori?"), rispondi solo a quello. Se non c'è richiesta specifica, fai un riassunto breve dell'output visibile."""
+
+
 def _screen_read_prompt() -> str:
     return """Sei Lily, un'assistente vocale. L'utente ti ha chiesto di leggere una finestra.
 Ecco il testo estratto dalla finestra "{window}" tramite OCR:
@@ -342,6 +360,7 @@ STRINGS = {
     "chain_prompt": _chain_prompt,
     "chat_system": _chat_system,
     "screen_read_prompt": _screen_read_prompt,
+    "terminal_read_prompt": _terminal_read_prompt,
 
     # ── Confirmation keywords ────────────────────────────────────────────
     "yes_keywords": {
@@ -479,7 +498,7 @@ STRINGS = {
 
     # ── Action responses: screenshot ─────────────────────────────────────
     "screenshot_no_screen": "Nessuno schermo trovato.",
-    "screenshot_saved": "Screenshot salvato.",
+    "screenshot_saved": "Screenshot salvato in {path}",
     "screenshot_error": "Errore screenshot: {e}",
 
     # ── Action responses: type_action ────────────────────────────────────
@@ -509,6 +528,10 @@ STRINGS = {
     "screen_read_capture_error": "Errore nella cattura dello schermo.",
     "screen_read_ocr_empty": "Non riesco a leggere il testo sulla finestra {query}.",
     "screen_read_llm_error": "Ho letto il testo ma non riesco a rispondere.",
+
+    # ── Action responses: terminal_read ───────────────────────────────
+    "terminal_read_empty": "Il terminale è vuoto, non c'è nessun output da leggere.",
+    "terminal_read_llm_error": "Ho letto l'output del terminale ma non riesco a formulare una risposta.",
 
     # ── Action responses: timer ──────────────────────────────────────────
     "timer_invalid_duration": "Durata timer non valida: '{parameter}'",
@@ -557,6 +580,19 @@ STRINGS = {
     "search_cancelled": "Ricerca annullata.",
     "search_not_found": "Nessun file trovato per '{query}'.",
     "search_found": "Trovato {name}.",
+    "search_found_path": "Trovato {name} in {path}.",
+
+    # ── Action responses: run_command ─────────────────────────────────────
+    "cmd_empty": "Nessun comando specificato.",
+    "cmd_blocked": "Comando bloccato per sicurezza.",
+    "cmd_denied": "Comando annullato dall'utente.",
+    "cmd_needs_confirm": "Il comando richiede conferma: {cmd}",
+    "cmd_success_no_output": "Comando eseguito con successo.",
+    "cmd_error_code": "Comando terminato con errore (codice {code}).",
+    "cmd_timeout": "Comando interrotto dopo {seconds} secondi.",
+    "cmd_error": "Errore nell'esecuzione: {e}",
+    "cmd_confirm_ask": "Vuoi che esegua: {cmd}?",
+    "cmd_confirm_short": "Questo comando modifica il sistema. Confermi?",
 
     # ── Action responses: window ─────────────────────────────────────────
     "window_all_minimized": "Tutto minimizzato.",
@@ -657,6 +693,7 @@ STRINGS = {
     "sidebar_usage": "Usage",
     "sidebar_log": "Log",
     "sidebar_home": "Home",
+    "sidebar_terminal": "Terminale",
 
     # ── UI: Settings page ────────────────────────────────────────────────
     "settings_title": "Impostazioni",
@@ -673,6 +710,8 @@ STRINGS = {
     "settings_dictation_silence": "Silenzio dettatura (s)",
     "settings_dictation_max": "Durata max dettatura (s)",
     "settings_dictation_timeout": "Timeout inattività (s)",
+    "settings_advanced": "Avanzate",
+    "settings_terminal_enabled": "Abilita terminale integrato",
     "settings_save": "Salva",
     "settings_saved": "Salvato!",
     "settings_browse_es": "Seleziona es.exe",

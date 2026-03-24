@@ -7,6 +7,20 @@ from core.search import search_everything, expand_search_terms, _split_search_wo
 
 
 class SearchFilesAction(Action):
+    TOOL_SCHEMA = {
+        "name": "search_files",
+        "description": "Cerca un file per nome sul PC usando Everything. Ritorna il path completo",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Nome del file da cercare"},
+                "search_terms": {"type": "array", "items": {"type": "string"}, "description": "Varianti del nome"},
+                "open_folder": {"type": "boolean", "description": "true = apri la cartella in Esplora File, false = ritorna solo il path"}
+            },
+            "required": ["query"]
+        }
+    }
+
     def execute(self, intent: dict, config, pick_callback=None, **kwargs) -> str:
         query = intent.get("query", "").strip()
         if not query:
@@ -61,10 +75,12 @@ class SearchFilesAction(Action):
         target = all_results[idx]
         folder = os.path.dirname(target)
         print(f"[Azione] Scelto risultato {idx}: {target}")
-        os.startfile(folder)
+        should_open = intent.get("open_folder", True)
+        if should_open:
+            os.startfile(folder)
         file_name = os.path.basename(target)
         set_action_context(type="search_files", name=file_name, path=target, folder=folder, query=query)
-        return t("search_found", name=file_name)
+        return t("search_found_path", name=file_name, path=target)
 
     def _search(self, search_terms: list[str], config) -> list[str]:
         is_cloud = getattr(config, "provider", "ollama") in ("anthropic", "openai", "gemini")

@@ -16,6 +16,19 @@ SW_RESTORE = 9
 
 
 class TypeInAction(Action):
+    TOOL_SCHEMA = {
+        "name": "type_in",
+        "description": "Vai su una finestra e scrivi testo. Aggiungi 'e invia' al parameter per premere invio",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Nome della finestra"},
+                "parameter": {"type": "string", "description": "Testo da scrivere. Vuoto = solo focus"}
+            },
+            "required": ["query"]
+        }
+    }
+
     def execute(self, intent: dict, config, **kwargs) -> str:
         query = intent.get("query", "").strip()
         parameter = intent.get("parameter", "").strip()

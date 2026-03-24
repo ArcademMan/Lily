@@ -18,6 +18,8 @@ def get_action_context() -> dict:
 
 
 class Action(ABC):
+    TOOL_SCHEMA: dict | None = None
+
     @abstractmethod
     def execute(self, intent: dict, config, **kwargs) -> str:
         pass

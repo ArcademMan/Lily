@@ -24,6 +24,19 @@ def _list_processes() -> list[dict]:
 
 
 class CloseProgramAction(Action):
+    TOOL_SCHEMA = {
+        "name": "close_program",
+        "description": "Chiudi un programma in esecuzione",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Nome del programma da chiudere"},
+                "search_terms": {"type": "array", "items": {"type": "string"}, "description": "Nomi alternativi"}
+            },
+            "required": ["query"]
+        }
+    }
+
     def execute(self, intent: dict, config, pick_callback=None, **kwargs) -> str:
         query = intent.get("query", "").strip()
         # Some models put the program name in parameter instead of query

@@ -48,6 +48,9 @@ LILY_DEFAULTS = {
     "dictation_silence_duration": 3.5,
     "dictation_max_duration": 60,
     "overlay_enabled": True,
+    "agent_enabled": False,
+    "agent_max_iterations": 6,
+    "terminal_enabled": False,
 }
 
 ALL_DEFAULTS = {**USER_DEFAULTS, **LILY_DEFAULTS}

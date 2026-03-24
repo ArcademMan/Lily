@@ -168,6 +168,10 @@ class LLMPage(QWidget):
         self._thinking.setChecked(config.thinking_enabled)
         gc.addWidget(self._thinking)
 
+        self._agent = QCheckBox("Modalita' agente (autonoma, usa tool e shell)")
+        self._agent.setChecked(config.agent_enabled)
+        gc.addWidget(self._agent)
+
         np_row, self._num_predict, self._np_label = _slider_row(
             "Lunghezza risposta (comandi)", 32, 512, config.num_predict)
         gc.addLayout(np_row)
@@ -212,6 +216,7 @@ class LLMPage(QWidget):
         self._gemini_model.currentTextChanged.connect(self._check_dirty)
         self._max_results.valueChanged.connect(self._check_dirty)
         self._thinking.toggled.connect(self._check_dirty)
+        self._agent.toggled.connect(self._check_dirty)
         self._num_predict.valueChanged.connect(self._check_dirty)
         self._chat_num_predict.valueChanged.connect(self._check_dirty)
         self._chat_max_history.valueChanged.connect(self._check_dirty)
@@ -229,6 +234,7 @@ class LLMPage(QWidget):
             self._gemini_model.currentText(),
             self._max_results.value(),
             self._thinking.isChecked(),
+            self._agent.isChecked(),
             self._num_predict.value(),
             self._chat_num_predict.value(),
             self._chat_max_history.value(),
@@ -316,6 +322,7 @@ class LLMPage(QWidget):
         self._config.gemini_api_key = self._gemini_api_key.text().strip()
         self._config.gemini_model = self._gemini_model.currentText()
         self._config.thinking_enabled = self._thinking.isChecked()
+        self._config.agent_enabled = self._agent.isChecked()
         self._config.num_predict = self._num_predict.value()
         self._config.chat_num_predict = self._chat_num_predict.value()
         self._config.chat_max_history = self._chat_max_history.value()

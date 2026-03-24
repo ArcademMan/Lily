@@ -19,6 +19,9 @@ def _get_pages():
         ("mdi6.text-box-outline", t("sidebar_log")),
     ]
 
+
+_TERMINAL_ICON = "mdi6.console"
+
 _ICON_SIZE = QSize(22, 22)
 _ICON_COLOR = "#EAEAEA"
 _ICON_ACTIVE = "#7C5CFC"
@@ -132,6 +135,12 @@ class Sidebar(QWidget):
             layout.addWidget(btn)
             self._buttons.append(btn)
 
+        # ── Terminal button (hidden by default) ──────────────────
+        self._terminal_btn = SidebarButton(_TERMINAL_ICON, t("sidebar_terminal"), self)
+        self._terminal_btn.clicked.connect(lambda checked: self._on_click(6))
+        self._terminal_btn.setVisible(False)
+        layout.addWidget(self._terminal_btn)
+
         layout.addStretch()
         self.set_active(0)  # Home — nessun bottone evidenziato
 
@@ -142,6 +151,10 @@ class Sidebar(QWidget):
     def set_active(self, index: int):
         for i, btn in enumerate(self._buttons):
             btn.set_active(i == index - 1)
+        self._terminal_btn.set_active(index == 6)
+
+    def set_terminal_visible(self, visible: bool):
+        self._terminal_btn.setVisible(visible)
 
     def set_page_dirty(self, page_index: int, dirty: bool):
         """Mark a page's sidebar button as having unsaved changes.

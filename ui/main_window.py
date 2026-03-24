@@ -19,6 +19,7 @@ from ui.pages.settings_page import SettingsPage
 from ui.pages.dashboard_page import DashboardPage
 from ui.pages.log_page import LogPage
 from ui.pages.chat_page import ChatPage
+from ui.pages.terminal_page import TerminalPage
 from ui.widgets.pick_overlay import PickOverlay
 
 
@@ -110,6 +111,7 @@ class MainWindow(QMainWindow):
         self._settings_page = SettingsPage(self.config, self.assistant)
         self._dashboard_page = DashboardPage(config=self.config)
         self._log_page = LogPage(self.bridge)
+        self._terminal_page = TerminalPage()
 
         self._stack.addWidget(self._voice_page)      # 0 — Home (logo)
         self._stack.addWidget(self._chat_page)        # 1 — Chat
@@ -117,6 +119,7 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._settings_page)    # 3 — Impostazioni
         self._stack.addWidget(self._dashboard_page)   # 4 — Usage
         self._stack.addWidget(self._log_page)         # 5 — Log
+        self._stack.addWidget(self._terminal_page)    # 6 — Terminale
 
         body_layout.addWidget(self._stack)
         root.addWidget(body)
@@ -124,6 +127,10 @@ class MainWindow(QMainWindow):
         # Dirty indicators: LLM page = sidebar index 2, Settings = index 3
         self._llm_page.dirty_changed.connect(lambda d: self._sidebar.set_page_dirty(2, d))
         self._settings_page.dirty_changed.connect(lambda d: self._sidebar.set_page_dirty(3, d))
+
+        # Terminal visibility from settings
+        self._settings_page.terminal_toggled.connect(self._sidebar.set_terminal_visible)
+        self._sidebar.set_terminal_visible(getattr(self.config, "terminal_enabled", False))
 
     def _switch_page(self, index: int):
         self._stack.setCurrentIndex(index)
@@ -201,6 +208,7 @@ class MainWindow(QMainWindow):
         if self._allow_close:
             self._fg_timer.stop()
             self._overlay.hide()
+            self._terminal_page.cleanup()
             event.accept()
         else:
             event.ignore()

@@ -16,6 +16,18 @@ def _get_volume_interface():
 
 
 class VolumeAction(Action):
+    TOOL_SCHEMA = {
+        "name": "volume",
+        "description": "Controlla il volume di sistema: alza, abbassa o muta",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "parameter": {"type": "string", "enum": ["up", "down", "mute"]}
+            },
+            "required": ["parameter"]
+        }
+    }
+
     def execute(self, intent: dict, config, **kwargs) -> str:
         parameter = intent.get("parameter", "").strip()
         try:

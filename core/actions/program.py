@@ -7,12 +7,22 @@ from core.llm.brain import pick_best_result, suggest_retry_terms
 from core.search import find_program, expand_search_terms
 
 
+def _sanitize_ps_query(query: str) -> str:
+    """Rimuove caratteri pericolosi per interpolazione in PowerShell."""
+    # Permetti solo lettere, cifre, spazi, trattini e punti
+    import re
+    return re.sub(r"[^\w\s\-.]", "", query, flags=re.UNICODE)
+
+
 def _try_launch_uwp(query: str) -> str | None:
     """Prova a lanciare un'app UWP tramite il suo AppID."""
+    safe_query = _sanitize_ps_query(query)
+    if not safe_query:
+        return None
     try:
         r = subprocess.run(
             ["powershell", "-c",
-             f'Get-StartApps | Where-Object {{ $_.Name -like "*{query}*" }} | Select-Object -First 1 -ExpandProperty AppID'],
+             f'Get-StartApps | Where-Object {{ $_.Name -like "*{safe_query}*" }} | Select-Object -First 1 -ExpandProperty AppID'],
             capture_output=True, text=True, timeout=5,
         )
         app_id = r.stdout.strip()
@@ -26,6 +36,19 @@ def _try_launch_uwp(query: str) -> str | None:
 
 
 class OpenProgramAction(Action):
+    TOOL_SCHEMA = {
+        "name": "open_program",
+        "description": "Avvia un programma, app o gioco sul PC",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Nome del programma"},
+                "search_terms": {"type": "array", "items": {"type": "string"}, "description": "Nomi alternativi"}
+            },
+            "required": ["query"]
+        }
+    }
+
     def execute(self, intent: dict, config, pick_callback=None, **kwargs) -> str:
         query = intent.get("query", "").strip()
         if not query:

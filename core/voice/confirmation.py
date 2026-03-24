@@ -67,7 +67,9 @@ def _llm_confirm(response: str, config) -> bool:
     from core.llm import get_provider
     from core.llm.brain import _strip_think_tags, _parse_json
 
+    from core.llm.brain import _get_model
     provider = get_provider(config)
+    model = _get_model(config)
     thinking = getattr(config, "thinking_enabled", False)
 
     prompt = f"""The user was asked to confirm a dangerous action. They replied: "{response}"
@@ -84,7 +86,7 @@ If unclear, default to false (safer)."""
 
     try:
         raw = provider.chat(
-            model=config.ollama_model,
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             format_json=True,
             num_predict=16,

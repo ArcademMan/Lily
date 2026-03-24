@@ -48,6 +48,7 @@ def _section_title(text: str) -> QLabel:
 
 class SettingsPage(QWidget):
     dirty_changed = QtSignal(bool)
+    terminal_toggled = QtSignal(bool)
 
     def __init__(self, config, assistant, parent=None):
         super().__init__(parent)
@@ -207,6 +208,20 @@ class SettingsPage(QWidget):
 
         form.addWidget(dict_card)
 
+        # ── Card: Avanzate ───────────────────────────────────────
+        form.addWidget(_section_title(t("settings_advanced")))
+        form.addSpacing(4)
+
+        adv_card = GlassCard()
+        ac = adv_card.body()
+
+        self._terminal_enabled = QCheckBox(t("settings_terminal_enabled"))
+        self._terminal_enabled.setChecked(getattr(config, "terminal_enabled", False))
+        self._terminal_enabled.toggled.connect(self._check_dirty)
+        ac.addWidget(self._terminal_enabled)
+
+        form.addWidget(adv_card)
+
         form.addStretch()
 
         # ── save / status ─────────────────────────────────────────
@@ -254,6 +269,7 @@ class SettingsPage(QWidget):
             self._dict_silence.value(),
             self._dict_max.value(),
             self._dict_timeout.value(),
+            self._terminal_enabled.isChecked(),
         )
 
     def _check_dirty(self):
@@ -304,7 +320,10 @@ class SettingsPage(QWidget):
         self._config.dictation_silence_duration = self._dict_silence.value() / 10.0
         self._config.dictation_max_duration = self._dict_max.value()
         self._config.dictation_silence_timeout = self._dict_timeout.value()
+        self._config.terminal_enabled = self._terminal_enabled.isChecked()
         self._config.save()
+
+        self.terminal_toggled.emit(self._terminal_enabled.isChecked())
 
         self._assistant.apply_config()
         if self._config.hotkey != old_hotkey:

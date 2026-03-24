@@ -11,6 +11,19 @@ from core.utils.ocr import ocr_image
 
 
 class ScreenReadAction(Action):
+    TOOL_SCHEMA = {
+        "name": "screen_read",
+        "description": "Cattura una finestra, OCR del testo visibile, e interpreta il contenuto",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Nome della finestra da leggere"},
+                "parameter": {"type": "string", "description": "Cosa cercare nel testo (opzionale)"}
+            },
+            "required": ["query"]
+        }
+    }
+
     def execute(self, intent: dict, config, **kwargs) -> str:
         query = intent.get("query", "").strip()
         parameter = intent.get("parameter", "").strip()

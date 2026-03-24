@@ -78,13 +78,15 @@ def copy_to_clipboard(text: str):
     GMEM_MOVEABLE = 0x0002
     kernel32 = ctypes.windll.kernel32
     user32.OpenClipboard(0)
-    user32.EmptyClipboard()
-    h = kernel32.GlobalAlloc(GMEM_MOVEABLE, (len(text) + 1) * 2)
-    p = kernel32.GlobalLock(h)
-    ctypes.cdll.msvcrt.wcscpy_s(ctypes.c_wchar_p(p), len(text) + 1, text)
-    kernel32.GlobalUnlock(h)
-    user32.SetClipboardData(CF_UNICODETEXT, h)
-    user32.CloseClipboard()
+    try:
+        user32.EmptyClipboard()
+        h = kernel32.GlobalAlloc(GMEM_MOVEABLE, (len(text) + 1) * 2)
+        p = kernel32.GlobalLock(h)
+        ctypes.cdll.msvcrt.wcscpy_s(ctypes.c_wchar_p(p), len(text) + 1, text)
+        kernel32.GlobalUnlock(h)
+        user32.SetClipboardData(CF_UNICODETEXT, h)
+    finally:
+        user32.CloseClipboard()
 
 
 def _clipboard_paste_ctypes(text: str):
@@ -94,11 +96,12 @@ def _clipboard_paste_ctypes(text: str):
     kernel32 = ctypes.windll.kernel32
 
     user32.OpenClipboard(0)
-    user32.EmptyClipboard()
-
-    h = kernel32.GlobalAlloc(GMEM_MOVEABLE, (len(text) + 1) * 2)
-    p = kernel32.GlobalLock(h)
-    ctypes.cdll.msvcrt.wcscpy_s(ctypes.c_wchar_p(p), len(text) + 1, text)
-    kernel32.GlobalUnlock(h)
-    user32.SetClipboardData(CF_UNICODETEXT, h)
-    user32.CloseClipboard()
+    try:
+        user32.EmptyClipboard()
+        h = kernel32.GlobalAlloc(GMEM_MOVEABLE, (len(text) + 1) * 2)
+        p = kernel32.GlobalLock(h)
+        ctypes.cdll.msvcrt.wcscpy_s(ctypes.c_wchar_p(p), len(text) + 1, text)
+        kernel32.GlobalUnlock(h)
+        user32.SetClipboardData(CF_UNICODETEXT, h)
+    finally:
+        user32.CloseClipboard()

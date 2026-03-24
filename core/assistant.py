@@ -63,6 +63,7 @@ class Assistant:
         self._pick_event = threading.Event()
         self._pick_choice: int = -1
         self._last_action_ctx: dict = {}
+        self._agent_stop = threading.Event()
 
         # Memoria conversazionale globale
         self._memory = ConversationMemory(
@@ -115,6 +116,17 @@ class Assistant:
         if self._listen_worker and self._listen_worker.isRunning():
             print("[Hotkey] Stop registrazione")
             self._listen_worker.stop()
+        elif self._processing:
+            print("[Hotkey] Stop agent/processing")
+            self._agent_stop.set()
+            self.tts.stop()
+            # Killa eventuali processi shell in corso
+            from core.actions.run_command import RunCommandAction
+            RunCommandAction.kill_active()
+            self._processing = False
+            self._busy = False
+            self.state_changed.emit("idle")
+            self.detail.emit("")
         else:
             print("[Hotkey] Stop ignorato (worker non attivo)")
 
@@ -224,6 +236,12 @@ class Assistant:
                 self._busy = False
             return
 
+        # Agent mode: se abilitato, salta il classify e vai diretto all'agent
+        if self.config.agent_enabled:
+            self._agent_stop.clear()
+            self._run_agent_mode(text)
+            return
+
         provider = self.config.provider
         model = self.config.anthropic_model if provider == "anthropic" else self.config.ollama_model
         print(f"[LLM] Invio a {model} ({provider})...")
@@ -249,6 +267,9 @@ class Assistant:
                 self.detail.emit("Decomposizione comandi...")
                 steps = decompose_chain(text, self.config)
                 if not steps:
+                    if self.config.agent_enabled:
+                        self._run_agent_mode(text)
+                        return
                     self.result_ready.emit(text, t("chain_decompose_fail"))
                     return
 
@@ -384,6 +405,78 @@ class Assistant:
             self._busy = False
             self.state_changed.emit("idle")
 
+    def _should_use_agent(self, intent_type: str, text: str) -> bool:
+        """Decide se usare l'agent loop invece del fast path."""
+        if not self.config.agent_enabled:
+            return False
+        # Intent sconosciuto con testo abbastanza lungo (non garbage)
+        if intent_type == "unknown" and len(text.split()) >= 4:
+            return True
+        return False
+
+    def _confirm_command(self, cmd: str) -> bool:
+        """Conferma vocale per comandi shell pericolosi."""
+        from core.voice.confirmation import wait_for_confirmation
+        from core.i18n import t as _t
+
+        # Mostra il comando tecnico in chat, ma parla solo un messaggio breve
+        print(f"[Agent] Conferma comando: {cmd}")
+        self.result_ready.emit("", f"⚠ {_t('cmd_confirm_ask', cmd=cmd)}")
+        self.tts.speak(_t("cmd_confirm_short"))
+        self.tts._done_event.wait(timeout=15)
+
+        play_beep()
+        return wait_for_confirmation(
+            self._whisper_model, self.config, self.state_changed,
+        )
+
+    def _run_agent_mode(self, text: str):
+        """Esegue la richiesta in modalita' agent loop."""
+        from core.llm.agent import run_agent
+
+        print(f"[Agent] Avvio agent mode per: {text}")
+        self.detail.emit("Modalita' agente...")
+
+        def _execute(intent_dict):
+            return execute_action(
+                intent_dict, self.config,
+                memory=self._memory,
+                pick_callback=self.request_user_pick,
+                confirm_callback=self._confirm_command,
+            )
+
+        try:
+            result, tool_log = run_agent(
+                request=text,
+                config=self.config,
+                memory=self._memory,
+                execute_fn=_execute,
+                detail_fn=self.detail.emit,
+                confirm_fn=self._confirm_command,
+                stop_event=self._agent_stop,
+            )
+        except Exception as e:
+            print(f"[Agent] Errore: {e}")
+            result = t("error_generic", e=e)
+            tool_log = []
+
+        self.detail.emit("")
+        print(f"[Agent] Risultato: {result}")
+        self.result_ready.emit(text, result)
+        self.tts.speak(result)
+
+        self._memory.add_user(text)
+        # Salva risposta + contesto tool nella memory per continuita'
+        if tool_log:
+            context = " | ".join(tool_log)
+            self._memory.add_assistant(f"{result} [tools: {context}]")
+        else:
+            self._memory.add_assistant(result)
+
+        self._processing = False
+        self._busy = False
+        self.state_changed.emit("idle")
+
     def _on_worker_finished(self):
         print(f"[Worker] Finito. processing={self._processing}")
         if not self._processing:
@@ -402,6 +495,22 @@ class Assistant:
         from core.actions import execute_action
 
         try:
+            # Agent mode: se abilitato, salta il classify
+            if self.config.agent_enabled:
+                from core.llm.agent import run_agent
+                result, tool_log = run_agent(
+                    request=text, config=self.config, memory=self._memory,
+                    execute_fn=lambda d: execute_action(d, self.config, memory=self._memory,
+                                                        pick_callback=self.request_user_pick,
+                                                        confirm_callback=self._confirm_command),
+                )
+                self._memory.add_user(text)
+                if tool_log:
+                    self._memory.add_assistant(f"{result} [tools: {' | '.join(tool_log)}]")
+                else:
+                    self._memory.add_assistant(result)
+                return result
+
             history = self._memory.get_messages()
             intent = classify_intent(text, self.config, history=history)
             intent["_original_text"] = text
@@ -415,10 +524,30 @@ class Assistant:
             if intent_type == "type_in" and intent.get("parameter", "").strip().lower() == "dictate":
                 return t("dictation_window_voice_only")
 
+            # Agent mode per intent sconosciuti (legacy, se agent disabilitato)
+            if self._should_use_agent(intent_type, text):
+                from core.llm.agent import run_agent
+                result = run_agent(
+                    request=text, config=self.config, memory=self._memory,
+                    execute_fn=lambda d: execute_action(d, self.config, memory=self._memory, pick_callback=self.request_user_pick),
+                )
+                self._memory.add_user(text)
+                self._memory.add_assistant(result)
+                return result
+
             # Catena di comandi
             if intent_type == "chain":
                 steps = decompose_chain(text, self.config)
                 if not steps:
+                    if self.config.agent_enabled:
+                        from core.llm.agent import run_agent
+                        result = run_agent(
+                            request=text, config=self.config, memory=self._memory,
+                            execute_fn=lambda d: execute_action(d, self.config, memory=self._memory, pick_callback=self.request_user_pick),
+                        )
+                        self._memory.add_user(text)
+                        self._memory.add_assistant(result)
+                        return result
                     return t("chain_decompose_fail")
 
                 results = []

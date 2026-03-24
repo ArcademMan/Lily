@@ -31,6 +31,18 @@ def _save_notes(notes: list[dict]):
 
 
 class NotesAction(Action):
+    TOOL_SCHEMA = {
+        "name": "notes",
+        "description": "Gestisci note vocali: salva, leggi, cerca, cancella",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Testo della nota o filtro di ricerca"},
+                "parameter": {"type": "string", "description": "Vuoto=salva, 'leggi'=leggi, 'cancella'=cancella, 'svuota'=cancella tutto"}
+            }
+        }
+    }
+
     _READ_CMDS = {"read", "leggi", "mostra", "lista"}
     _DELETE_CMDS = {"delete", "cancella", "rimuovi", "togli"}
     _CLEAR_CMDS = {"clear", "svuota", "cancella_tutto"}

@@ -21,6 +21,18 @@ def _press_media_key(vk_code: int):
 
 
 class MediaAction(Action):
+    TOOL_SCHEMA = {
+        "name": "media",
+        "description": "Controlla la riproduzione multimediale: play/pausa, traccia successiva/precedente, stop",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "parameter": {"type": "string", "enum": ["play_pause", "next", "previous", "stop"]}
+            },
+            "required": ["parameter"]
+        }
+    }
+
     def execute(self, intent: dict, config, **kwargs) -> str:
         parameter = intent.get("parameter", "").strip().lower()
 

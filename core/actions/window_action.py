@@ -49,6 +49,24 @@ def _get_monitors() -> list[_RECT]:
 
 
 class WindowAction(Action):
+    TOOL_SCHEMA = {
+        "name": "window",
+        "description": "Gestisci finestre: chiudi cartelle, minimizza, snap, sposta monitor, ripristina, nudge",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Nome del programma (per snap/move/minimize/restore/nudge)"},
+                "parameter": {"type": "string", "enum": [
+                    "close_explorer", "minimize_all", "show_desktop",
+                    "snap_left", "snap_right", "move_monitor",
+                    "restore", "minimize", "close_all",
+                    "nudge_up", "nudge_down", "nudge_left", "nudge_right"
+                ]}
+            },
+            "required": ["parameter"]
+        }
+    }
+
     def execute(self, intent: dict, config, **kwargs) -> str:
         parameter = intent.get("parameter", "").strip().lower()
         query = intent.get("query", "").strip()

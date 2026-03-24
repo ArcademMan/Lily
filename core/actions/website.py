@@ -9,6 +9,18 @@ SEARCH_ENGINES = {"google", "google.com", "www.google.com", "bing", "bing.com", 
 
 
 class OpenWebsiteAction(Action):
+    TOOL_SCHEMA = {
+        "name": "open_website",
+        "description": "Apri un sito web o cerca su Google",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "URL, dominio, o testo da cercare su Google"}
+            },
+            "required": ["query"]
+        }
+    }
+
     def execute(self, intent: dict, config, **kwargs) -> str:
         query = intent.get("query", "").strip()
         search_terms = intent.get("search_terms", [])

@@ -16,6 +16,8 @@ from core.actions.self_config import SelfConfigAction
 from core.actions.notes import NotesAction
 from core.actions.system_info import SystemInfoAction
 from core.actions.memory_action import MemoryAction
+from core.actions.run_command import RunCommandAction
+from core.actions.terminal_read import TerminalReadAction
 
 _ACTIONS = {
     "open_folder": OpenFolderAction(),
@@ -36,11 +38,18 @@ _ACTIONS = {
     "notes": NotesAction(),
     "system_info": SystemInfoAction(),
     "save_memory": MemoryAction(),
+    "run_command": RunCommandAction(),
+    "terminal_read": TerminalReadAction(),
 }
 
 
+def get_tool_schemas() -> list[dict]:
+    """Collect TOOL_SCHEMA from all actions that define one."""
+    return [a.TOOL_SCHEMA for a in _ACTIONS.values() if a.TOOL_SCHEMA]
+
+
 def execute_action(intent: dict, config, memory=None, pick_callback=None,
-                   last_action_ctx: dict = None) -> str:
+                   last_action_ctx: dict = None, confirm_callback=None) -> str:
     action_type = intent.get("intent", "unknown")
     action = _ACTIONS.get(action_type)
     if action is None:
@@ -53,5 +62,7 @@ def execute_action(intent: dict, config, memory=None, pick_callback=None,
         kwargs["pick_callback"] = pick_callback
     if last_action_ctx is not None:
         kwargs["_last_action_context"] = last_action_ctx
+    if confirm_callback is not None:
+        kwargs["confirm_callback"] = confirm_callback
 
     return action.execute(intent, config, **kwargs)

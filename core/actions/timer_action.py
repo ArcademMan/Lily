@@ -22,6 +22,19 @@ class _TimerNotifier:
 
 
 class TimerAction(Action):
+    TOOL_SCHEMA = {
+        "name": "timer",
+        "description": "Imposta un timer, promemoria o timer ricorrente. Cancella o elenca timer attivi",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Messaggio del promemoria (opzionale)"},
+                "parameter": {"type": "string", "description": "Durata (5m, 1h, 30s), 'cancel', 'lista', o 'recurring DURATA'"}
+            },
+            "required": ["parameter"]
+        }
+    }
+
     _active_timers: dict[str, threading.Timer] = {}
     _recurring_timers: dict[str, dict] = {}  # id -> {seconds, label, timer}
     _lock = threading.Lock()

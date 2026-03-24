@@ -7,6 +7,17 @@ from core.i18n import t, t_list
 class SystemInfoAction(Action):
     """Reports system resource usage: CPU, RAM, disk, top processes."""
 
+    TOOL_SCHEMA = {
+        "name": "system_info",
+        "description": "Info sulle risorse di sistema: CPU, RAM, disco, processi pesanti",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Cosa controllare: cpu, ram, disco, processi. Vuoto=panoramica"}
+            }
+        }
+    }
+
     def execute(self, intent: dict, config, **kwargs) -> str:
         query = intent.get("query", "").strip().lower()
         parameter = intent.get("parameter", "").strip().lower()

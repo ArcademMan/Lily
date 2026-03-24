@@ -58,6 +58,7 @@ TYPE must be one of:
   "nudge_up", "nudge_down", "nudge_left", "nudge_right" = move window slightly in a direction. Append pixel amount: "nudge_down_100" for 100px. Default is 50px. "a bit" = 50, "a lot" = 200, or user can specify exact pixels.
   Keywords: "close folders", "minimize all", "show desktop", "snap left/right", "move to other screen", "restore", "minimize"
 - screen_read: user wants to READ/SEE what's on a window or screen. Captures the window and reads the text via OCR. query = window/program name. parameter = what to look for or question about the content. Keywords: "read", "what does it say", "read me", "what's on", "last message"
+- terminal_read: user wants to READ the output of Lily's INTEGRATED TERMINAL (the terminal tab inside Lily). No need for a window name. parameter = what to look for (optional). Keywords: "read the terminal", "what's on the terminal", "terminal output", "what does the terminal say". IMPORTANT: use this ONLY when the user refers to Lily's own terminal, NOT external terminal windows.
 - type_in: user wants to GO TO a specific window and optionally TYPE text there. query = window/program name to focus. parameter = the text to type. If the user wants to SEND/SUBMIT the message, ALWAYS append " and send" at the END of parameter. Keywords: "go to", "type in", "write in", "send to"
   IMPORTANT for type_in: when user says "send" or "and send" ANYWHERE in the sentence, put " and send" at the END of parameter.
   CRITICAL: "send X", "send to X" at the START of a sentence = ALWAYS type_in, NEVER chain, NEVER chat.
@@ -106,6 +107,9 @@ Examples:
 - "move Discord down a bit" -> {"intent": "window", "query": "Discord", "search_terms": [], "parameter": "nudge_down"}
 - "read the last message on WhatsApp" -> {"intent": "screen_read", "query": "WhatsApp", "search_terms": [], "parameter": "last message"}
 - "what's on Discord" -> {"intent": "screen_read", "query": "Discord", "search_terms": [], "parameter": ""}
+- "read the terminal" -> {"intent": "terminal_read", "query": "", "search_terms": [], "parameter": ""}
+- "what's on the terminal" -> {"intent": "terminal_read", "query": "", "search_terms": [], "parameter": ""}
+- "are there any errors on the terminal?" -> {"intent": "terminal_read", "query": "", "search_terms": [], "parameter": "errors"}
 - "go to the terminal and type hello and send" -> {"intent": "type_in", "query": "terminal", "search_terms": [], "parameter": "hello and send"}
 - "go to Sublime" -> {"intent": "type_in", "query": "Sublime", "search_terms": [], "parameter": ""}
 - "send to WhatsApp this message is from Lily" -> {"intent": "type_in", "query": "WhatsApp", "search_terms": [], "parameter": "this message is from Lily and send"}
@@ -141,6 +145,7 @@ volume: parameter=up/down/mute
 media: parameter=play_pause/next/previous/stop
 window: parameter=close_explorer/minimize_all/show_desktop/snap_left/snap_right/move_monitor/minimize/restore/close_all/nudge_up/nudge_down/nudge_left/nudge_right(append pixels). query=program name when needed
 screen_read: OCR window. query=window, parameter=what to look for
+terminal_read: read Lily's integrated terminal output. parameter=what to look for (optional). Keywords: "read the terminal", "what's on the terminal", "terminal output"
 type_in: go to window+type. query=window, parameter=text VERBATIM. "send" anywhere->append " and send" at END. No text after app->parameter="dictate"
 time: current time/date
 dictation: voice typing. "write [TEXT]"->query=TEXT
@@ -298,6 +303,19 @@ Here is the text extracted from the "{window}" window via OCR:
 Reply in English concisely and naturally. If the user asked for something specific (e.g. "last message"), only answer that. If no specific request, give a brief summary of the visible content."""
 
 
+def _terminal_read_prompt(terminal_text="", user_request="", **_) -> str:
+    return f"""You are Lily, a voice assistant. The user asked you to read the integrated terminal.
+Here is the recent terminal output:
+
+---
+{terminal_text}
+---
+
+{user_request}
+
+Reply in English concisely and naturally. If the user asked for something specific (e.g. "are there errors?"), only answer that. If no specific request, give a brief summary of the visible output."""
+
+
 # ── STRINGS ──────────────────────────────────────────────────────────────────
 
 STRINGS = {
@@ -334,6 +352,7 @@ STRINGS = {
     "chain_prompt": _chain_prompt,
     "chat_system": _chat_system,
     "screen_read_prompt": _screen_read_prompt,
+    "terminal_read_prompt": _terminal_read_prompt,
 
     # ── Confirmation keywords ────────────────────────────────────────────
     "yes_keywords": {
@@ -471,7 +490,7 @@ STRINGS = {
 
     # ── Action responses: screenshot ─────────────────────────────────────
     "screenshot_no_screen": "No screen found.",
-    "screenshot_saved": "Screenshot saved.",
+    "screenshot_saved": "Screenshot saved in {path}",
     "screenshot_error": "Screenshot error: {e}",
 
     # ── Action responses: type_action ────────────────────────────────────
@@ -501,6 +520,10 @@ STRINGS = {
     "screen_read_capture_error": "Error capturing the screen.",
     "screen_read_ocr_empty": "Can't read text on the window {query}.",
     "screen_read_llm_error": "I read the text but can't formulate a response.",
+
+    # ── Action responses: terminal_read ───────────────────────────────
+    "terminal_read_empty": "The terminal is empty, there's no output to read.",
+    "terminal_read_llm_error": "I read the terminal output but can't formulate a response.",
 
     # ── Action responses: timer ──────────────────────────────────────────
     "timer_invalid_duration": "Invalid timer duration: '{parameter}'",
@@ -549,6 +572,19 @@ STRINGS = {
     "search_cancelled": "Search cancelled.",
     "search_not_found": "No file found for '{query}'.",
     "search_found": "Found {name}.",
+    "search_found_path": "Found {name} at {path}.",
+
+    # ── Action responses: run_command ─────────────────────────────────────
+    "cmd_empty": "No command specified.",
+    "cmd_blocked": "Command blocked for safety.",
+    "cmd_denied": "Command cancelled by user.",
+    "cmd_needs_confirm": "Command requires confirmation: {cmd}",
+    "cmd_success_no_output": "Command executed successfully.",
+    "cmd_error_code": "Command finished with error (code {code}).",
+    "cmd_timeout": "Command timed out after {seconds} seconds.",
+    "cmd_error": "Execution error: {e}",
+    "cmd_confirm_ask": "Do you want me to run: {cmd}?",
+    "cmd_confirm_short": "This command modifies the system. Confirm?",
 
     # ── Action responses: window ─────────────────────────────────────────
     "window_all_minimized": "Everything minimized.",
@@ -649,6 +685,7 @@ STRINGS = {
     "sidebar_usage": "Usage",
     "sidebar_log": "Log",
     "sidebar_home": "Home",
+    "sidebar_terminal": "Terminal",
 
     # ── UI: Settings page ────────────────────────────────────────────────
     "settings_title": "Settings",
@@ -665,6 +702,8 @@ STRINGS = {
     "settings_dictation_silence": "Dictation silence (s)",
     "settings_dictation_max": "Max dictation duration (s)",
     "settings_dictation_timeout": "Inactivity timeout (s)",
+    "settings_advanced": "Advanced",
+    "settings_terminal_enabled": "Enable integrated terminal",
     "settings_save": "Save",
     "settings_saved": "Saved!",
     "settings_browse_es": "Select es.exe",

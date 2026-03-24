@@ -6,6 +6,12 @@ from core.i18n import t
 
 
 class ScreenshotAction(Action):
+    TOOL_SCHEMA = {
+        "name": "screenshot",
+        "description": "Cattura uno screenshot dello schermo",
+        "parameters": {"type": "object", "properties": {}}
+    }
+
     def execute(self, intent: dict, config, **kwargs) -> str:
         try:
             from PySide6.QtWidgets import QApplication
@@ -31,6 +37,6 @@ class ScreenshotAction(Action):
             pixmap.save(filepath, "PNG")
 
             print(f"[Screenshot] Salvato: {filepath}")
-            return t("screenshot_saved")
+            return t("screenshot_saved", path=filepath)
         except Exception as e:
             return t("screenshot_error", e=e)
