@@ -197,6 +197,16 @@ class TokenTracker:
 
         self._save()
 
+    def session_totals(self) -> tuple[int, int]:
+        """Ritorna (total_input, total_output) sommati su tutti i provider della sessione."""
+        with self._lock:
+            ti = to = 0
+            for s in self._session.values():
+                for m in s.get("models", {}).values():
+                    ti += m.get("input", 0)
+                    to += m.get("output", 0)
+            return ti, to
+
     def get_session(self, provider: str) -> dict:
         with self._lock:
             s = self._session.get(provider, {"models": {}})

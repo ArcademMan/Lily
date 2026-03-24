@@ -2,12 +2,12 @@ import ctypes
 import time
 
 import keyboard
+from core.i18n import t_dict
 from core.signal import Signal
 
 # Alias per tasti con nomi diversi in base alla lingua di Windows
-_KEY_ALIASES = {
-    "caps lock": {"caps lock", "bloc maius", "capslock", "capital"},
-}
+def _key_aliases() -> dict:
+    return t_dict("hotkey_aliases")
 
 _TOGGLE_KEYS = {"caps lock", "capslock"}
 VK_CAPITAL = 0x14
@@ -44,7 +44,7 @@ class HotkeyManager:
                 keys = {k.strip() for k in hotkey.split("+")}
             else:
                 keys = {hotkey}
-            for alias_key, alias_set in _KEY_ALIASES.items():
+            for alias_key, alias_set in _key_aliases().items():
                 if alias_key in keys:
                     keys.update(alias_set)
 

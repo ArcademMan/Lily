@@ -1,22 +1,27 @@
 import psutil
 
 from core.actions.base import Action
+from core.i18n import t, t_list
 
 
 class SystemInfoAction(Action):
     """Reports system resource usage: CPU, RAM, disk, top processes."""
 
-    def execute(self, intent: dict, config) -> str:
+    def execute(self, intent: dict, config, **kwargs) -> str:
         query = intent.get("query", "").strip().lower()
         parameter = intent.get("parameter", "").strip().lower()
 
-        if "process" in query or "pesant" in query or "pesano" in query:
+        heavy_kw = t_list("sysinfo_heavy_keywords")
+        disk_kw = t_list("sysinfo_disk_keywords")
+        ram_kw = t_list("sysinfo_ram_keywords")
+
+        if "process" in query or any(kw in query for kw in heavy_kw):
             return self._top_processes(parameter)
-        if "disco" in query or "disk" in query or "spazio" in query:
+        if any(kw in query for kw in disk_kw):
             return self._disk_usage()
         if "cpu" in query:
             return self._cpu_info()
-        if "ram" in query or "memoria" in query:
+        if any(kw in query for kw in ram_kw):
             return self._ram_info()
 
         # Default: panoramica completa
@@ -32,19 +37,16 @@ class SystemInfoAction(Action):
         disk_free = disk.free / (1024 ** 3)
         disk_total = disk.total / (1024 ** 3)
 
-        parts = [
-            f"CPU al {cpu}%",
-            f"RAM {ram_used:.1f} su {ram_total:.1f} giga, al {mem.percent}%",
-            f"Disco C {disk_free:.0f} giga liberi su {disk_total:.0f}",
-        ]
+        overview = t("sysinfo_overview", cpu=cpu, ram_used=ram_used, ram_total=ram_total,
+                      ram_pct=mem.percent, disk_free=disk_free, disk_total=disk_total)
 
         # Top 3 processi per RAM
         top = self._get_top_processes(3, "memory")
         if top:
-            nomi = ", ".join(f"{name} ({mem_mb:.0f} mega)" for name, mem_mb, _ in top)
-            parts.append(f"Processi più pesanti: {nomi}")
+            nomi = ", ".join(f"{name} ({mem_mb:.0f} MB)" for name, mem_mb, _ in top)
+            overview += " " + t("sysinfo_heavy_procs", names=nomi)
 
-        return ". ".join(parts) + "."
+        return overview
 
     def _cpu_info(self) -> str:
         cpu_total = psutil.cpu_percent(interval=1)
@@ -53,11 +55,11 @@ class SystemInfoAction(Action):
         max_core = max(per_core)
 
         top = self._get_top_processes(3, "cpu")
-        result = f"CPU al {cpu_total}% complessivo, {cores} core, picco singolo core al {max_core}%."
+        result = t("sysinfo_cpu_detail", cpu=cpu_total, cores=cores, max_core=max_core)
 
         if top:
             nomi = ", ".join(f"{name} ({cpu:.0f}%)" for name, _, cpu in top)
-            result += f" Processi più attivi: {nomi}."
+            result += " " + t("sysinfo_cpu_procs", names=nomi)
 
         return result
 
@@ -68,11 +70,11 @@ class SystemInfoAction(Action):
         available = mem.available / (1024 ** 3)
 
         top = self._get_top_processes(5, "memory")
-        result = f"RAM al {mem.percent}%: {used:.1f} giga usati su {total:.1f}, {available:.1f} giga disponibili."
+        result = t("sysinfo_ram_detail", pct=mem.percent, used=used, total=total, available=available)
 
         if top:
-            nomi = ", ".join(f"{name} ({mem_mb:.0f} mega)" for name, mem_mb, _ in top)
-            result += f" Più pesanti: {nomi}."
+            nomi = ", ".join(f"{name} ({mem_mb:.0f} MB)" for name, mem_mb, _ in top)
+            result += " " + t("sysinfo_ram_procs", names=nomi)
 
         return result
 
@@ -85,31 +87,30 @@ class SystemInfoAction(Action):
                 usage = psutil.disk_usage(part.mountpoint)
                 free = usage.free / (1024 ** 3)
                 total = usage.total / (1024 ** 3)
-                parts.append(
-                    f"Disco {part.mountpoint.rstrip(chr(92))} "
-                    f"{free:.0f} giga liberi su {total:.0f}, al {usage.percent}%"
-                )
+                parts.append(t("sysinfo_disk_line",
+                               mount=part.mountpoint.rstrip(chr(92)),
+                               free=free, total=total, pct=usage.percent))
             except (PermissionError, OSError):
                 continue
 
-        return ". ".join(parts) + "." if parts else "Non riesco a leggere i dischi."
+        return " ".join(parts) if parts else t("sysinfo_disk_error")
 
     def _top_processes(self, sort_by: str = "") -> str:
         key = "cpu" if "cpu" in sort_by else "memory"
         top = self._get_top_processes(5, key)
 
         if not top:
-            return "Non riesco a leggere i processi."
+            return t("sysinfo_proc_error")
 
         label = "CPU" if key == "cpu" else "RAM"
         lines = []
         for name, mem_mb, cpu_pct in top:
             if key == "cpu":
-                lines.append(f"{name}: CPU {cpu_pct:.0f}%, RAM {mem_mb:.0f} mega")
+                lines.append(f"{name}: CPU {cpu_pct:.0f}%, RAM {mem_mb:.0f} MB")
             else:
-                lines.append(f"{name}: {mem_mb:.0f} mega di RAM, CPU {cpu_pct:.0f}%")
+                lines.append(f"{name}: {mem_mb:.0f} MB RAM, CPU {cpu_pct:.0f}%")
 
-        intro = f"Top 5 processi per {label}"
+        intro = t("sysinfo_top_procs", label=label)
         return f"{intro}: " + ", ".join(lines) + "."
 
     @staticmethod

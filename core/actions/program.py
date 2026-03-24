@@ -1,7 +1,8 @@
 import os
 import subprocess
 
-from core.actions.base import Action
+from core.actions.base import Action, set_action_context
+from core.i18n import t
 from core.llm.brain import pick_best_result, suggest_retry_terms
 from core.search import find_program, expand_search_terms
 
@@ -25,10 +26,23 @@ def _try_launch_uwp(query: str) -> str | None:
 
 
 class OpenProgramAction(Action):
-    def execute(self, intent: dict, config) -> str:
+    def execute(self, intent: dict, config, pick_callback=None, **kwargs) -> str:
         query = intent.get("query", "").strip()
         if not query:
-            return "Nessun programma specificato."
+            return t("program_none_specified")
+
+        # Check memoria persistente: se c'è un path salvato, usalo direttamente
+        from core.memory import find_memory_path
+        saved_path = find_memory_path(query)
+        if saved_path and os.path.exists(saved_path):
+            print(f"[Memory] Trovato in memoria: {query} -> {saved_path}")
+            try:
+                os.startfile(saved_path)
+                name = os.path.splitext(os.path.basename(saved_path))[0]
+                set_action_context(type="program", name=name, path=saved_path, query=query)
+                return t("program_launched", name=name)
+            except Exception:
+                print(f"[Memory] Path in memoria non valido, cerco normalmente...")
 
         search_terms = intent.get("search_terms", [])
         if query not in search_terms:
@@ -46,16 +60,26 @@ class OpenProgramAction(Action):
                 results = find_program(retry_terms, config.es_path)
 
         if not results:
-            return f"Nessun programma trovato per '{query}'."
+            return t("program_not_found", query=query)
 
         user_request = intent.get("_original_text", query)
-        idx = pick_best_result(
+        idx, confident = pick_best_result(
             user_request, results, config,
             intent_type=intent.get("intent", ""),
             intent_query=query,
         )
+        if not confident and pick_callback and len(results) > 1:
+            print(f"[Pick] LLM non sicuro, chiedo all'utente ({len(results)} risultati)")
+            user_choice = pick_callback(results, idx)
+            if user_choice == -2:
+                return t("pick_cancelled_action")
+            elif user_choice >= 0:
+                idx = user_choice
+            elif user_choice == -1:
+                return t("program_found_no_match", query=query)
+
         if idx < 0:
-            return f"Trovati programmi ma nessuno corrisponde a '{query}'."
+            return t("program_found_no_match", query=query)
         target = results[idx]
         print(f"[Azione] Scelto risultato {idx}: {target}")
         try:
@@ -65,6 +89,7 @@ class OpenProgramAction(Action):
             print(f"[Azione] Accesso negato, provo come app UWP...")
             app_id = _try_launch_uwp(query)
             if not app_id:
-                return f"Non riesco ad aprire {query}, accesso negato."
+                return t("program_access_denied", query=query)
         name = os.path.splitext(os.path.basename(target))[0]
-        return f"Avvio {name}."
+        set_action_context(type="program", name=name, path=target, query=query)
+        return t("program_launched", name=name)

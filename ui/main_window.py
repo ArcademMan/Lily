@@ -1,6 +1,8 @@
 """Main application window: frameless, glassmorphism, sidebar navigation."""
 
-from PySide6.QtCore import Qt, QPoint
+import ctypes
+
+from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtGui import QIcon, QPainter, QColor
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -17,6 +19,7 @@ from ui.pages.settings_page import SettingsPage
 from ui.pages.dashboard_page import DashboardPage
 from ui.pages.log_page import LogPage
 from ui.pages.chat_page import ChatPage
+from ui.widgets.pick_overlay import PickOverlay
 
 
 class MainWindow(QMainWindow):
@@ -41,6 +44,18 @@ class MainWindow(QMainWindow):
         # Overlay
         self._overlay = LilyOverlay(config)
         bridge.state_changed.connect(self._overlay.set_state)
+        bridge.countdown.connect(self._overlay.set_countdown)
+
+        # Foreground check timer (every 500ms)
+        self._fg_timer = QTimer(self)
+        self._fg_timer.timeout.connect(self._check_foreground)
+        self._fg_timer.start(500)
+
+        # Pick overlay
+        self._pick_overlay = PickOverlay()
+        bridge.pick_request.connect(self._on_pick_request)
+        bridge.pick_done.connect(self._pick_overlay.hide)
+        self._pick_overlay.choice_made.connect(self.assistant.on_pick_choice)
 
         # Listener per riavvio — intercetta il segnale "__RESTART__" nel main thread Qt
         bridge.notify.connect(self._on_notify_restart)
@@ -106,12 +121,21 @@ class MainWindow(QMainWindow):
         body_layout.addWidget(self._stack)
         root.addWidget(body)
 
+        # Dirty indicators: LLM page = sidebar index 2, Settings = index 3
+        self._llm_page.dirty_changed.connect(lambda d: self._sidebar.set_page_dirty(2, d))
+        self._settings_page.dirty_changed.connect(lambda d: self._sidebar.set_page_dirty(3, d))
+
     def _switch_page(self, index: int):
         self._stack.setCurrentIndex(index)
+        # Overlay visible when not on Home (0) or Chat (1)
+        self._overlay.set_on_relevant_page(index in (0, 1))
         if index == 0:
             self._voice_page._update_model_label()
         elif index == 4:
             self._dashboard_page.refresh()
+
+    def _on_pick_request(self, results_with_meta, suggested_index):
+        self._pick_overlay.show_results(results_with_meta, suggested_index)
 
     def _center(self):
         screen = self.screen().availableGeometry()
@@ -142,6 +166,20 @@ class MainWindow(QMainWindow):
         p.drawRoundedRect(self.rect(), 12, 12)
         p.end()
 
+    # ── foreground detection ──────────────────────────────────────
+    def _check_foreground(self):
+        if not self._window_is_visible():
+            return
+        try:
+            fg_hwnd = ctypes.windll.user32.GetForegroundWindow()
+            my_hwnd = int(self.winId())
+            self._overlay.set_window_foreground(fg_hwnd == my_hwnd)
+        except Exception:
+            pass
+
+    def _window_is_visible(self):
+        return self.isVisible() and not (self.windowState() & Qt.WindowState.WindowMinimized)
+
     # ── tray integration ──────────────────────────────────────────
     def show_and_raise(self):
         self.showNormal()
@@ -161,16 +199,18 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self._allow_close:
+            self._fg_timer.stop()
             self._overlay.hide()
             event.accept()
         else:
             event.ignore()
             self.hide()
-            self._overlay.set_main_window_visible(False)
+            self._overlay.set_window_visible(False)
 
     def showEvent(self, event):
         super().showEvent(event)
-        self._overlay.set_main_window_visible(True)
+        self._overlay.set_window_visible(True)
+        self._overlay.set_window_foreground(True)
         try:
             enable_blur(int(self.winId()))
         except Exception:
@@ -178,10 +218,10 @@ class MainWindow(QMainWindow):
 
     def hideEvent(self, event):
         super().hideEvent(event)
-        self._overlay.set_main_window_visible(False)
+        self._overlay.set_window_visible(False)
 
     def changeEvent(self, event):
         super().changeEvent(event)
         if event.type() == event.Type.WindowStateChange:
             minimized = bool(self.windowState() & Qt.WindowState.WindowMinimized)
-            self._overlay.set_main_window_visible(not minimized)
+            self._overlay.set_window_visible(not minimized)

@@ -2,10 +2,11 @@ import os
 from datetime import datetime
 
 from core.actions.base import Action
+from core.i18n import t
 
 
 class ScreenshotAction(Action):
-    def execute(self, intent: dict, config) -> str:
+    def execute(self, intent: dict, config, **kwargs) -> str:
         try:
             from PySide6.QtWidgets import QApplication
             from PySide6.QtCore import QTimer
@@ -24,12 +25,12 @@ class ScreenshotAction(Action):
 
             screen = QApplication.primaryScreen()
             if screen is None:
-                return "Nessuno schermo trovato."
+                return t("screenshot_no_screen")
 
             pixmap = screen.grabWindow(0)
             pixmap.save(filepath, "PNG")
 
             print(f"[Screenshot] Salvato: {filepath}")
-            return "Screenshot salvato."
+            return t("screenshot_saved")
         except Exception as e:
-            return f"Errore screenshot: {e}"
+            return t("screenshot_error", e=e)

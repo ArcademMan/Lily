@@ -4,6 +4,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QPainterPath
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu
 
+from core.i18n import t
+
 
 def _make_circle_icon(icon_path: str, size: int = 64) -> QIcon:
     """Crea un'icona circolare per il tray."""
@@ -60,9 +62,9 @@ class TrayManager:
         self._tray = QSystemTrayIcon(_make_circle_icon(icon_path), app)
         menu = QMenu()
         menu.setStyleSheet(_MENU_STYLE)
-        menu.addAction("Apri", self._show)
+        menu.addAction(t("tray_open"), self._show)
         menu.addSeparator()
-        menu.addAction("Esci", self._quit)
+        menu.addAction(t("tray_quit"), self._quit)
         self._tray.setContextMenu(menu)
         self._tray.activated.connect(self._on_activated)
         self._tray.setToolTip("Lily")

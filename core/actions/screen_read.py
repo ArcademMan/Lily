@@ -3,6 +3,7 @@
 import os
 
 from core.actions.base import Action
+from core.i18n import t, t_prompt
 from core.llm.brain import generate_chat_response
 from core.utils.win32 import find_window_hwnd
 from core.utils.screenshot import capture_window
@@ -10,25 +11,25 @@ from core.utils.ocr import ocr_image
 
 
 class ScreenReadAction(Action):
-    def execute(self, intent: dict, config) -> str:
+    def execute(self, intent: dict, config, **kwargs) -> str:
         query = intent.get("query", "").strip()
         parameter = intent.get("parameter", "").strip()
         search_terms = intent.get("search_terms", [])
         original_text = intent.get("_original_text", "")
 
         if not query:
-            return "Non hai specificato quale finestra leggere."
+            return t("screen_read_no_window")
 
         # Trova la finestra
         hwnd = find_window_hwnd(query, search_terms=search_terms)
         if hwnd is None:
-            return f"Non trovo la finestra {query}."
+            return t("screen_read_window_not_found", query=query)
 
         # Cattura screenshot
         print(f"[ScreenRead] Cattura finestra: {query}")
         image_path = capture_window(hwnd)
         if image_path is None:
-            return "Errore nella cattura dello schermo."
+            return t("screen_read_capture_error")
 
         try:
             # OCR
@@ -37,32 +38,22 @@ class ScreenReadAction(Action):
             ocr_text = ocr_image(image_path, tesseract_path)
 
             if not ocr_text:
-                return f"Non riesco a leggere il testo sulla finestra {query}."
+                return t("screen_read_ocr_empty", query=query)
 
             print(f"[ScreenRead] Testo OCR ({len(ocr_text)} chars): {ocr_text[:200]}...")
 
             # Usa l'LLM per interpretare/riassumere quello che ha letto
             # in base a cosa l'utente ha chiesto
-            prompt = f"""L'utente ha chiesto: "{original_text}"
-
-Ho catturato lo schermo della finestra "{query}" e questo è il testo OCR (potrebbe essere impreciso):
----
-{ocr_text[:2000]}
----
-
-REGOLE:
-- Rispondi SOLO alla domanda dell'utente, in massimo 1-2 frasi
-- NON ripetere il testo OCR, riassumi e interpreta
-- Se chiede "ultimo messaggio" o "chi ha scritto", cerca nomi di persone e messaggi nel testo
-- Il testo verrà letto ad alta voce, sii breve e chiaro"""
+            prompt = t_prompt("screen_read_prompt", window=query,
+                              ocr_text=ocr_text[:2000], user_request=original_text)
 
             from core.llm import get_provider
             from core.llm.brain import _strip_think_tags, _apply_thinking
-            from core.llm.prompts import CHAT_SYSTEM_PROMPT
+            from core.llm.prompts import get_chat_system_prompt
 
             provider = get_provider(config)
             thinking = getattr(config, "thinking_enabled", False)
-            system_prompt = CHAT_SYSTEM_PROMPT
+            system_prompt = get_chat_system_prompt()
             if not thinking:
                 system_prompt = _apply_thinking(system_prompt, config)
 
@@ -79,7 +70,7 @@ REGOLE:
                 thinking=thinking,
             )
             response = _strip_think_tags(raw).strip()
-            return response if response else f"Ho letto il testo ma non riesco a rispondere."
+            return response if response else t("screen_read_llm_error")
 
         finally:
             # Pulisci il file temporaneo

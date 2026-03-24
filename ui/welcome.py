@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QWidget,
 )
 
+from core.i18n import t
 from ui.widgets.glass_card import GlassCard
 
 
@@ -17,7 +18,7 @@ _ACCENT = "#7C5CFC"
 
 def _status_dot(ok: bool) -> str:
     color = "#4CAF50" if ok else "#F44336"
-    label = "Rilevato" if ok else "Non trovato"
+    label = t("welcome_detected") if ok else t("welcome_not_found")
     return f'<span style="color:{color}; font-weight:600;">● {label}</span>'
 
 
@@ -66,7 +67,7 @@ class WelcomeWizard(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Benvenuto in Lily")
+        self.setWindowTitle(t("welcome_title"))
         self.setFixedSize(560, 620)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog
@@ -79,15 +80,12 @@ class WelcomeWizard(QDialog):
         layout.setSpacing(12)
 
         # ── Header ──
-        title = QLabel("Benvenuto in Lily")
+        title = QLabel(t("welcome_title"))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(f"font-size: 22px; font-weight: 700; color: {_ACCENT};")
         layout.addWidget(title)
 
-        subtitle = QLabel(
-            "Assistente vocale per Windows. Controlla il tuo PC con la voce: "
-            "apri programmi, cerca file, gestisci finestre, detta testo e molto altro."
-        )
+        subtitle = QLabel(t("welcome_subtitle"))
         subtitle.setWordWrap(True)
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet("font-size: 12px; color: #aaa;")
@@ -95,7 +93,7 @@ class WelcomeWizard(QDialog):
 
         layout.addSpacing(8)
 
-        deps_title = QLabel("Dipendenze opzionali")
+        deps_title = QLabel(t("welcome_deps"))
         deps_title.setStyleSheet("font-size: 13px; font-weight: 600; color: #ccc;")
         layout.addWidget(deps_title)
 
@@ -111,37 +109,33 @@ class WelcomeWizard(QDialog):
         deps_layout.setSpacing(10)
 
         self._card_everything = _DepCard(
-            "Everything",
-            "Motore di ricerca file istantaneo per Windows. Indicizza l'intero disco in pochi secondi.",
-            "Lily lo usa per trovare qualsiasi programma, cartella o file sul tuo PC in millisecondi. "
-            "Senza Everything la ricerca è limitata a Start Menu, Desktop e Registry.",
+            t("welcome_everything_name"),
+            t("welcome_everything_desc"),
+            t("welcome_everything_detail"),
             "https://www.voidtools.com/downloads/",
         )
         deps_layout.addWidget(self._card_everything)
 
         self._card_ollama = _DepCard(
-            "Ollama",
-            "Server per modelli LLM locali. Esegue modelli AI direttamente sul tuo PC senza costi.",
-            "Permette a Lily di ragionare e capire i tuoi comandi usando un LLM locale (es. Qwen, Llama). "
-            "Non necessario se preferisci usare API cloud (Anthropic, OpenAI, Gemini).",
+            t("welcome_ollama_name"),
+            t("welcome_ollama_desc"),
+            t("welcome_ollama_detail"),
             "https://ollama.com/download",
         )
         deps_layout.addWidget(self._card_ollama)
 
         self._card_cuda = _DepCard(
-            "CUDA (NVIDIA)",
-            "Librerie GPU NVIDIA per accelerare la trascrizione vocale con Whisper.",
-            "Con CUDA la trascrizione è molto più veloce (5-10x). "
-            "Se non hai una GPU NVIDIA, puoi usare Whisper su CPU dalle impostazioni (più lento ma funziona).",
+            t("welcome_cuda_name"),
+            t("welcome_cuda_desc"),
+            t("welcome_cuda_detail"),
             "https://developer.nvidia.com/cuda-downloads",
         )
         deps_layout.addWidget(self._card_cuda)
 
         self._card_tesseract = _DepCard(
-            "Tesseract OCR",
-            "Motore OCR open-source per leggere testo dallo schermo.",
-            "Usato dalla funzione 'leggi schermo': Lily fa uno screenshot e Tesseract ne estrae il testo. "
-            "Necessario solo se vuoi usare questa funzionalità.",
+            t("welcome_tesseract_name"),
+            t("welcome_tesseract_desc"),
+            t("welcome_tesseract_detail"),
             "https://github.com/tesseract-ocr/tesseract",
         )
         deps_layout.addWidget(self._card_tesseract)
@@ -154,7 +148,7 @@ class WelcomeWizard(QDialog):
         footer = QHBoxLayout()
         footer.addStretch()
 
-        self._btn = QPushButton("Inizia")
+        self._btn = QPushButton(t("welcome_start"))
         self._btn.setFixedWidth(140)
         self._btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn.clicked.connect(self.accept)

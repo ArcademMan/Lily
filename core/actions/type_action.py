@@ -7,6 +7,7 @@ import ctypes.wintypes
 import keyboard as kb
 
 from core.actions.base import Action
+from core.i18n import t
 from core.utils.win32 import find_window_hwnd
 from core.utils.clipboard import clipboard_paste
 
@@ -15,12 +16,12 @@ SW_RESTORE = 9
 
 
 class TypeInAction(Action):
-    def execute(self, intent: dict, config) -> str:
+    def execute(self, intent: dict, config, **kwargs) -> str:
         query = intent.get("query", "").strip()
         parameter = intent.get("parameter", "").strip()
 
         if not query:
-            return "Non hai specificato su quale finestra andare."
+            return t("type_no_window")
 
         # Trova la finestra
         search_terms = intent.get("search_terms", [])
@@ -39,7 +40,7 @@ class TypeInAction(Action):
                 break
 
         if hwnd is None:
-            return f"Non trovo la finestra {query}."
+            return t("type_window_not_found", query=query)
 
         window_name = query
 
@@ -48,7 +49,7 @@ class TypeInAction(Action):
             if user32.IsIconic(hwnd):
                 user32.ShowWindow(hwnd, SW_RESTORE)
             user32.SetForegroundWindow(hwnd)
-            return f"Sono su {window_name}."
+            return t("type_focused", name=window_name)
 
         # Controlla se deve inviare
         send = False
@@ -83,7 +84,7 @@ class TypeInAction(Action):
             user32.SetForegroundWindow(prev_hwnd)
 
         if send:
-            return f"Scritto e inviato su {window_name}."
+            return t("type_sent", name=window_name)
         if text:
-            return f"Scritto su {window_name}."
-        return f"Sono su {window_name}."
+            return t("type_written", name=window_name)
+        return t("type_focused", name=window_name)

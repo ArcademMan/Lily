@@ -1,6 +1,7 @@
 import subprocess
 
-from core.actions.base import Action
+from core.actions.base import Action, set_action_context
+from core.i18n import t
 from core.llm.brain import pick_best_result
 
 
@@ -23,7 +24,7 @@ def _list_processes() -> list[dict]:
 
 
 class CloseProgramAction(Action):
-    def execute(self, intent: dict, config) -> str:
+    def execute(self, intent: dict, config, pick_callback=None, **kwargs) -> str:
         query = intent.get("query", "").strip()
         # Some models put the program name in parameter instead of query
         if not query:
@@ -35,7 +36,7 @@ class CloseProgramAction(Action):
                 original = original.lower().replace(word, "")
             query = original.strip().strip(".")
         if not query:
-            return "Nessun programma specificato."
+            return t("close_none_specified")
 
         processes = _list_processes()
         # Filter processes matching the query
@@ -46,29 +47,41 @@ class CloseProgramAction(Action):
         matches = [p for p in processes if any(t in p.lower() for t in all_terms)]
 
         if not matches:
-            return f"Nessun processo trovato per {query}."
+            return t("close_not_found", query=query)
 
         if len(matches) == 1:
             target = matches[0]
         else:
             user_request = intent.get("_original_text", query)
-            idx = pick_best_result(user_request, matches, config)
+            idx, confident = pick_best_result(user_request, matches, config)
+
+            if not confident and pick_callback and len(matches) > 1:
+                print(f"[Pick] LLM non sicuro, chiedo all'utente ({len(matches)} risultati)")
+                user_choice = pick_callback(matches, idx)
+                if user_choice == -2:
+                    return t("pick_cancelled_action")
+                elif user_choice >= 0:
+                    idx = user_choice
+                elif user_choice == -1:
+                    return t("close_found_no_match", query=query)
+
             if idx < 0:
-                return f"Trovati processi ma nessuno corrisponde a {query}."
+                return t("close_found_no_match", query=query)
             target = matches[idx]
 
         print(f"[Azione] Chiusura: {target}")
         name = target.replace(".exe", "")
+        set_action_context(type="close_program", name=name, process=target, query=query)
         try:
             # Tentativo gentile: WM_CLOSE sulle finestre del processo
             if self._close_gentle(target):
-                return f"Chiuso {name}."
+                return t("close_success", name=name)
             # Fallback: taskkill forzato
             print(f"[Azione] WM_CLOSE fallito, forzo chiusura di {target}")
             subprocess.run(["taskkill", "/F", "/IM", target], capture_output=True, timeout=5)
-            return f"Chiuso {name} forzatamente."
+            return t("close_forced", name=name)
         except Exception as e:
-            return f"Errore nella chiusura di {target}: {e}"
+            return t("close_error", target=target, e=e)
 
     @staticmethod
     def _close_gentle(process_name: str, timeout: float = 3.0) -> bool:

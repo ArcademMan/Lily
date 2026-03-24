@@ -1,83 +1,76 @@
 """Azione self_config: Lily modifica i propri settings."""
 
 from core.actions.base import Action
+from core.i18n import t, t_dict, t_set
 
 
-# Mapping nomi parlati → chiavi settings
-SETTING_ALIASES = {
-    "voce": "tts_voice",
-    "voice": "tts_voice",
-    "tts": "tts_enabled",
-    "text to speech": "tts_enabled",
-    "hotkey": "hotkey",
-    "tasto": "hotkey",
-    "thinking": "thinking_enabled",
-    "ragionamento": "thinking_enabled",
-    "num predict": "num_predict",
-    "token": "num_predict",
-    "chat token": "chat_num_predict",
-    "storico": "chat_max_history",
-    "storia": "chat_max_history",
-    "silenzio dettatura": "dictation_silence_duration",
-    "durata dettatura": "dictation_max_duration",
-    "timeout dettatura": "dictation_silence_timeout",
-}
+# Mapping nomi parlati → chiavi settings (loaded from locale)
+def _get_setting_aliases():
+    return t_dict("setting_aliases")
 
 # Valori speciali parlati → valori reali
-VALUE_ALIASES = {
-    "sì": True, "si": True, "attiva": True, "abilita": True, "on": True, "accendi": True,
-    "no": False, "disattiva": False, "disabilita": False, "off": False, "spegni": False,
-    "isabella": "Isabella", "diego": "Diego", "elsa": "Elsa",
-    "paola": "Paola",
-}
+def _get_value_aliases_true():
+    return t_set("value_aliases_true")
+
+def _get_value_aliases_false():
+    return t_set("value_aliases_false")
 
 
 class SelfConfigAction(Action):
-    def execute(self, intent: dict, config) -> str:
+    def execute(self, intent: dict, config, **kwargs) -> str:
         query = intent.get("query", "").strip().lower()
         parameter = intent.get("parameter", "").strip()
 
         if not query:
-            return "Non hai specificato quale impostazione cambiare."
+            return t("config_no_setting")
 
         # Trova la chiave del setting
-        setting_key = SETTING_ALIASES.get(query)
+        aliases = _get_setting_aliases()
+        setting_key = aliases.get(query)
         if not setting_key:
             # Prova match parziale
-            for alias, key in SETTING_ALIASES.items():
+            for alias, key in aliases.items():
                 if alias in query:
                     setting_key = key
                     break
 
         if not setting_key:
-            return f"Non conosco l'impostazione {query}."
+            return t("config_unknown_setting", query=query)
 
         # Verifica che sia un setting di Lily (non utente)
         if not config.is_lily_setting(setting_key):
-            return f"Non posso modificare {setting_key}, è un'impostazione utente."
+            return t("config_readonly", key=setting_key)
 
         if not parameter:
             # Leggi il valore attuale
             current = getattr(config, setting_key, None)
-            return f"{query} è impostato a {current}."
+            return t("config_current_value", query=query, value=current)
 
         # Converti il valore
-        value = VALUE_ALIASES.get(parameter.lower(), parameter)
+        true_vals = _get_value_aliases_true()
+        false_vals = _get_value_aliases_false()
+        param_lower = parameter.lower()
+        if param_lower in true_vals:
+            value = True
+        elif param_lower in false_vals:
+            value = False
+        else:
+            value = parameter
 
         # Type casting basato sul valore attuale
         current = getattr(config, setting_key, None)
         if isinstance(current, bool) and not isinstance(value, bool):
-            value = value.lower() in ("true", "1", "sì", "si", "on")
+            value = value.lower() in true_vals
         elif isinstance(current, int) and isinstance(value, str):
             try:
                 value = int(value)
             except ValueError:
-                return f"Il valore {parameter} non è valido per {query}."
+                return t("config_invalid_value", parameter=parameter, query=query)
         elif isinstance(current, float) and isinstance(value, str):
             try:
                 value = float(value)
             except ValueError:
-                return f"Il valore {parameter} non è valido per {query}."
+                return t("config_invalid_value", parameter=parameter, query=query)
 
         # Applica
         old_value = current
@@ -85,4 +78,4 @@ class SelfConfigAction(Action):
         config.save_lily()
         print(f"[SelfConfig] {setting_key}: {old_value} → {value}")
 
-        return f"Ho cambiato {query} da {old_value} a {value}."
+        return t("config_changed", query=query, old=old_value, new=value)

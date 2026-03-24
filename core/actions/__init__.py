@@ -15,6 +15,7 @@ from core.actions.screen_read import ScreenReadAction
 from core.actions.self_config import SelfConfigAction
 from core.actions.notes import NotesAction
 from core.actions.system_info import SystemInfoAction
+from core.actions.memory_action import MemoryAction
 
 _ACTIONS = {
     "open_folder": OpenFolderAction(),
@@ -34,15 +35,23 @@ _ACTIONS = {
     "self_config": SelfConfigAction(),
     "notes": NotesAction(),
     "system_info": SystemInfoAction(),
+    "save_memory": MemoryAction(),
 }
 
 
-def execute_action(intent: dict, config, memory=None) -> str:
+def execute_action(intent: dict, config, memory=None, pick_callback=None,
+                   last_action_ctx: dict = None) -> str:
     action_type = intent.get("intent", "unknown")
     action = _ACTIONS.get(action_type)
     if action is None:
         return "Non ho capito cosa vuoi fare."
-    # Passa la memoria condivisa alla ChatAction
-    if action_type == "chat" and memory is not None:
-        return action.execute(intent, config, memory=memory)
-    return action.execute(intent, config)
+
+    kwargs = {}
+    if memory is not None:
+        kwargs["memory"] = memory
+    if pick_callback is not None:
+        kwargs["pick_callback"] = pick_callback
+    if last_action_ctx is not None:
+        kwargs["_last_action_context"] = last_action_ctx
+
+    return action.execute(intent, config, **kwargs)

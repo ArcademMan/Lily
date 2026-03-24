@@ -18,6 +18,11 @@ _ICON = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def run_app():
     config = Config()
+
+    # Initialize locale from config before any UI/string imports
+    from core.i18n import set_locale
+    set_locale(getattr(config, "language", "it"))
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setStyleSheet(STYLESHEET)

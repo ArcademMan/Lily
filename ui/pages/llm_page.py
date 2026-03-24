@@ -45,6 +45,7 @@ def _section_title(text: str) -> QLabel:
 
 
 class LLMPage(QWidget):
+    dirty_changed = QtSignal(bool)
     _ollama_models_ready = QtSignal(list)
     _ollama_status_ready = QtSignal(bool)
 
@@ -168,11 +169,11 @@ class LLMPage(QWidget):
         gc.addWidget(self._thinking)
 
         np_row, self._num_predict, self._np_label = _slider_row(
-            "Num Predict", 32, 512, config.num_predict)
+            "Lunghezza risposta (comandi)", 32, 512, config.num_predict)
         gc.addLayout(np_row)
 
         cnp_row, self._chat_num_predict, self._cnp_label = _slider_row(
-            "Chat Num Predict", 64, 1024, config.chat_num_predict)
+            "Lunghezza risposta (chat)", 64, 1024, config.chat_num_predict)
         gc.addLayout(cnp_row)
 
         hist_row, self._chat_max_history, self._hist_label = _slider_row(
@@ -197,6 +198,45 @@ class LLMPage(QWidget):
         outer.addLayout(btn_row)
 
         self._on_provider_changed(config.provider)
+
+        # ── dirty tracking ─────────────────────────────────────────
+        self._snapshot = self._take_snapshot()
+        self._provider.currentTextChanged.connect(self._check_dirty)
+        self._ollama_model.currentTextChanged.connect(self._check_dirty)
+        self._ollama_model.editTextChanged.connect(self._check_dirty)
+        self._api_key.textChanged.connect(self._check_dirty)
+        self._anthropic_model.currentTextChanged.connect(self._check_dirty)
+        self._openai_api_key.textChanged.connect(self._check_dirty)
+        self._openai_model.currentTextChanged.connect(self._check_dirty)
+        self._gemini_api_key.textChanged.connect(self._check_dirty)
+        self._gemini_model.currentTextChanged.connect(self._check_dirty)
+        self._max_results.valueChanged.connect(self._check_dirty)
+        self._thinking.toggled.connect(self._check_dirty)
+        self._num_predict.valueChanged.connect(self._check_dirty)
+        self._chat_num_predict.valueChanged.connect(self._check_dirty)
+        self._chat_max_history.valueChanged.connect(self._check_dirty)
+
+    # ── dirty tracking ─────────────────────────────────────────────
+    def _take_snapshot(self):
+        return (
+            self._provider.currentText(),
+            self._ollama_model.currentText().strip(),
+            self._api_key.text().strip(),
+            self._anthropic_model.currentText(),
+            self._openai_api_key.text().strip(),
+            self._openai_model.currentText(),
+            self._gemini_api_key.text().strip(),
+            self._gemini_model.currentText(),
+            self._max_results.value(),
+            self._thinking.isChecked(),
+            self._num_predict.value(),
+            self._chat_num_predict.value(),
+            self._chat_max_history.value(),
+        )
+
+    def _check_dirty(self):
+        dirty = self._take_snapshot() != self._snapshot
+        self.dirty_changed.emit(dirty)
 
     # ── helpers ───────────────────────────────────────────────────
     def _check_ollama_status(self):
@@ -283,6 +323,8 @@ class LLMPage(QWidget):
 
         self._assistant.apply_config()
 
+        self._snapshot = self._take_snapshot()
+        self.dirty_changed.emit(False)
         self._status.setText("Salvato!")
         from PySide6.QtCore import QTimer
         QTimer.singleShot(2000, lambda: self._status.setText(""))

@@ -106,8 +106,51 @@ def search_registry(terms: list[str]) -> list[str]:
     return results
 
 
+def _italian_number_variants(word: str) -> list[str]:
+    """Generate Italian singular/plural variants for a word.
+    E.g. 'tappetini' -> ['tappetino'], 'gatto' -> ['gatti'], 'funghi' -> ['fungo']."""
+    variants = []
+    w = word.lower()
+    # Plural -> Singular (most specific first)
+    if w.endswith("ini"):       # tappetini -> tappetino
+        variants.append(word[:-1] + "o")
+    elif w.endswith("oni"):     # bottoni -> bottone
+        variants.append(word[:-1] + "e")
+    elif w.endswith("etti"):    # biglietti -> biglietto
+        variants.append(word[:-1] + "o")
+    elif w.endswith("elli"):    # cappelli -> cappello
+        variants.append(word[:-1] + "o")
+    elif w.endswith("chi"):     # fiaschi -> fiasco
+        variants.append(word[:-3] + "co")
+    elif w.endswith("ghi"):     # funghi -> fungo
+        variants.append(word[:-3] + "go")
+    elif w.endswith("i") and len(w) > 2:  # gatti -> gatto
+        variants.append(word[:-1] + "o")
+    # -e plural -> -a singular (case -> casa)
+    if w.endswith("e") and len(w) > 2:
+        variants.append(word[:-1] + "a")
+    # Singular -> Plural
+    if w.endswith("ino"):       # tappetino -> tappetini
+        variants.append(word[:-1] + "i")
+    elif w.endswith("one"):     # bottone -> bottoni
+        variants.append(word[:-1] + "i")
+    elif w.endswith("etto"):    # biglietto -> biglietti
+        variants.append(word[:-1] + "i")
+    elif w.endswith("ello"):    # cappello -> cappelli
+        variants.append(word[:-1] + "i")
+    elif w.endswith("co"):      # fiasco -> fiaschi
+        variants.append(word[:-2] + "chi")
+    elif w.endswith("go"):      # fungo -> funghi
+        variants.append(word[:-2] + "ghi")
+    elif w.endswith("o") and len(w) > 2:  # gatto -> gatti
+        variants.append(word[:-1] + "i")
+    elif w.endswith("a") and len(w) > 2:  # casa -> case
+        variants.append(word[:-1] + "e")
+    return variants
+
+
 def expand_search_terms(terms: list[str]) -> list[str]:
-    """Add variants with different separators to search terms.
+    """Add variants with different separators and Italian singular/plural to search terms.
     E.g. ['Animus Template'] -> ['Animus Template', 'AnimusTemplate', 'animus_template', 'Animus-Template']
     E.g. ['AnimusTemplate'] -> ['AnimusTemplate', 'Animus Template']"""
     import re
@@ -115,7 +158,7 @@ def expand_search_terms(terms: list[str]) -> list[str]:
     seen = set(t.lower() for t in terms)
 
     def _add(variant):
-        if variant.lower() not in seen:
+        if variant and variant.lower() not in seen:
             expanded.append(variant)
             seen.add(variant.lower())
 
@@ -133,6 +176,15 @@ def expand_search_terms(terms: list[str]) -> list[str]:
         _add(t.replace("_", " "))
         # "animus-template" -> "animus template"
         _add(t.replace("-", " "))
+        # Italian singular/plural variants
+        # Strip extension first, generate variants, re-add extension
+        base, ext = (t.rsplit(".", 1) if "." in t else (t, ""))
+        for word in base.replace("_", " ").replace("-", " ").split():
+            for variant in _italian_number_variants(word):
+                # Replace the word in the original term
+                _add(base.replace(word, variant) + ("." + ext if ext else ""))
+                _add(variant + ("." + ext if ext else ""))
+                _add(variant)
     return expanded
 
 
@@ -185,3 +237,79 @@ def find_program(search_terms: list[str], es_path: str) -> list[str]:
     for i, r in enumerate(results):
         print(f"  {i}: {r}")
     return results
+
+
+def get_path_metadata(path: str) -> str:
+    """Genera una descrizione compatta del contenuto di un path per il pick LLM.
+    Per cartelle: numero file, tipi principali, dimensione, ultima modifica.
+    Per file: dimensione, estensione, ultima modifica."""
+    try:
+        p = Path(path)
+        if not p.exists():
+            return ""
+
+        if p.is_dir():
+            files = []
+            try:
+                entries = list(p.iterdir())
+                files = [e for e in entries if e.is_file()]
+            except PermissionError:
+                return "[access denied]"
+
+            if not files:
+                return "[empty]"
+
+            # Conta per estensione
+            ext_count = {}
+            total_size = 0
+            for f in files:
+                ext = f.suffix.lower().lstrip(".") or "no_ext"
+                ext_count[ext] = ext_count.get(ext, 0) + 1
+                try:
+                    total_size += f.stat().st_size
+                except Exception:
+                    pass
+
+            # Top 3 estensioni
+            top_exts = sorted(ext_count.items(), key=lambda x: -x[1])[:3]
+            ext_str = ",".join(f"{n} {e}" for e, n in top_exts)
+
+            # Dimensione leggibile
+            if total_size < 1024:
+                size_str = f"{total_size}B"
+            elif total_size < 1024 * 1024:
+                size_str = f"{total_size // 1024}KB"
+            elif total_size < 1024 * 1024 * 1024:
+                size_str = f"{total_size // (1024 * 1024)}MB"
+            else:
+                size_str = f"{total_size / (1024 ** 3):.1f}GB"
+
+            # Ultima modifica
+            try:
+                mtime = max(f.stat().st_mtime for f in files)
+                from datetime import datetime
+                mod_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+            except Exception:
+                mod_str = "?"
+
+            return f"[{len(files)} files: {ext_str} | {size_str} | {mod_str}]"
+
+        else:
+            # File singolo
+            try:
+                size = p.stat().st_size
+                if size < 1024:
+                    size_str = f"{size}B"
+                elif size < 1024 * 1024:
+                    size_str = f"{size // 1024}KB"
+                else:
+                    size_str = f"{size // (1024 * 1024)}MB"
+
+                from datetime import datetime
+                mod_str = datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d")
+                return f"[{p.suffix} | {size_str} | {mod_str}]"
+            except Exception:
+                return ""
+
+    except Exception:
+        return ""

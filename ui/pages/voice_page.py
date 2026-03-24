@@ -7,14 +7,18 @@ import qtawesome as qta
 from PySide6.QtCore import Qt, QTimer, Signal as QtSignal
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 
+from core.i18n import t
 from ui.widgets.state_indicator import StateIndicator
 
-_STATE_LABELS = {
-    "loading": "Caricamento modello...",
-    "idle": "Pronto",
-    "listening": "Ascolto...",
-    "processing": "Elaborazione...",
-}
+
+def _state_label(state: str) -> str:
+    return {
+        "loading": t("state_loading"),
+        "idle": t("state_idle"),
+        "listening": t("state_listening"),
+        "processing": t("state_processing"),
+        "transcribing": t("state_transcribing"),
+    }.get(state, state)
 
 
 class VoicePage(QWidget):
@@ -37,7 +41,7 @@ class VoicePage(QWidget):
         layout.addWidget(self._indicator, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # state label
-        self._state_label = QLabel("Caricamento modello...")
+        self._state_label = QLabel(t("state_loading"))
         self._state_label.setObjectName("sectionTitle")
         self._state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._state_label)
@@ -156,7 +160,7 @@ class VoicePage(QWidget):
 
     def _on_state(self, state: str):
         self._indicator.set_state(state)
-        self._state_label.setText(_STATE_LABELS.get(state, state))
+        self._state_label.setText(_state_label(state))
         if state == "listening":
             self._transcription.setText("")
             self._result.setText("")
@@ -168,7 +172,7 @@ class VoicePage(QWidget):
 
     def _on_result(self, text: str, result: str):
         self._indicator.set_state("idle")
-        self._state_label.setText("Pronto")
+        self._state_label.setText(t("state_idle"))
         self._detail_label.setText("")
         self._transcription.setText(f'"{text}"')
         self._result.setText(result)
@@ -216,7 +220,7 @@ class VoicePage(QWidget):
                     name = parts[3]
                     free = total - used
                     self._gpu_info_ready.emit(
-                        f"{name}  |  VRAM: {used}/{total} MB ({free} MB liberi)  |  GPU: {util}%"
+                        t("gpu_info", name=name, used=used, total=total, free=free, util=util)
                     )
                 else:
                     self._gpu_info_ready.emit("")

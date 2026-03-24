@@ -1,9 +1,10 @@
 from datetime import datetime
 
 from core.actions.base import Action
+from core.i18n import t
 
 
 class TimeAction(Action):
-    def execute(self, intent: dict, config) -> str:
+    def execute(self, intent: dict, config, **kwargs) -> str:
         now = datetime.now()
-        return f"Sono le {now.strftime('%H:%M')} di {now.strftime('%A %d %B %Y')}."
+        return t("time_response", time=now.strftime('%H:%M'), date=now.strftime('%A %d %B %Y'))

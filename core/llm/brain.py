@@ -5,14 +5,9 @@ import re
 
 from core.llm import get_provider
 from core.llm.prompts import (
-    SYSTEM_PROMPT_OLLAMA, SYSTEM_PROMPT_CLAUDE,
-    PICK_PROMPT_OLLAMA, PICK_PROMPT_CLAUDE,
-    RETRY_PROMPT, CHAT_SYSTEM_PROMPT, CHAIN_PROMPT,
-    _get_lily_paths_block,
+    get_classify_prompt, get_pick_prompt, get_retry_prompt,
+    get_chain_prompt, get_chat_system_prompt,
 )
-
-
-_lily_paths_block = _get_lily_paths_block()
 
 
 def _get_model(config) -> str:
@@ -23,9 +18,7 @@ def _get_model(config) -> str:
 
 def _get_prompts(config):
     provider = getattr(config, "provider", "ollama")
-    if provider in ("anthropic", "openai", "gemini"):
-        return SYSTEM_PROMPT_CLAUDE + _lily_paths_block, PICK_PROMPT_CLAUDE
-    return SYSTEM_PROMPT_OLLAMA + _lily_paths_block, PICK_PROMPT_OLLAMA
+    return get_classify_prompt(provider), get_pick_prompt(provider)
 
 
 def _strip_think_tags(text: str) -> str:
@@ -83,7 +76,12 @@ def classify_intent(text: str, config, history: list[dict] = None) -> dict:
         num_predict = max(num_predict, 512)
     provider = get_provider(config)
     try:
-        messages = [{"role": "system", "content": system_prompt}]
+        # Inietta memoria persistente nel prompt
+        from core.memory import get_memory_for_prompt
+        memory_block = get_memory_for_prompt()
+        full_system = system_prompt + memory_block if memory_block else system_prompt
+
+        messages = [{"role": "system", "content": full_system}]
         if history:
             messages.extend(history)
         messages.append({"role": "user", "content": text})
@@ -117,7 +115,7 @@ def generate_chat_response(text: str, history: list[dict], config) -> str:
     chat_num_predict = getattr(config, "chat_num_predict", 384)
     thinking = getattr(config, "thinking_enabled", False)
 
-    system_prompt = CHAT_SYSTEM_PROMPT + _lily_paths_block
+    system_prompt = get_chat_system_prompt()
     if not thinking:
         system_prompt = _apply_thinking(system_prompt, config)
 
@@ -146,7 +144,7 @@ def decompose_chain(text: str, config) -> list[dict]:
     """Decompone un comando multiplo in una lista di intent singoli."""
     provider = get_provider(config)
     thinking = getattr(config, "thinking_enabled", False)
-    prompt = CHAIN_PROMPT
+    prompt = get_chain_prompt()
     if not thinking:
         prompt = _apply_thinking(prompt, config)
 
@@ -179,11 +177,15 @@ def decompose_chain(text: str, config) -> list[dict]:
 
 
 def pick_best_result(user_query: str, results: list[str], config,
-                     intent_type: str = "", intent_query: str = "") -> int:
+                     intent_type: str = "", intent_query: str = "") -> tuple[int, bool]:
+    """Pick the best result. Returns (index, confident).
+    confident=False means the UI should show results to the user."""
     if not results:
-        return -1
+        return -1, False
     if len(results) == 1:
-        pass
+        return 0, True
+
+    from core.search import get_path_metadata
 
     thinking = getattr(config, "thinking_enabled", False)
     is_cloud = getattr(config, "provider", "ollama") in ("anthropic", "openai", "gemini")
@@ -200,7 +202,16 @@ def pick_best_result(user_query: str, results: list[str], config,
             return "/".join(parts)
         return parts[0] + "/.../" + "/".join(parts[-3:])
 
-    numbered = "\n".join(f"{i}: {_short(r)}" for i, r in enumerate(capped))
+    # Arricchisci risultati con metadata
+    lines = []
+    for i, r in enumerate(capped):
+        meta = get_path_metadata(r)
+        line = f"{i}: {_short(r)}"
+        if meta:
+            line += f" {meta}"
+        lines.append(line)
+
+    numbered = "\n".join(lines)
     prompt = pick_template.format(
         user_query=user_query, results=numbered,
         intent_type=intent_type or "unknown",
@@ -223,14 +234,15 @@ def pick_best_result(user_query: str, results: list[str], config,
 
         data = _parse_json(raw)
         if not data:
-            return 0
+            return 0, False
         idx = data.get("pick", 0)
+        confident = data.get("confident", True)
         if idx < 0:
-            return -1
-        return idx if idx < len(capped) else 0
+            return -1, False
+        return (idx if idx < len(capped) else 0), confident
     except Exception as e:
         print(f"[LLM] Pick errore: {e}")
-        return 0
+        return 0, False
 
 
 def suggest_retry_terms(query: str, search_terms: list[str],
@@ -238,7 +250,7 @@ def suggest_retry_terms(query: str, search_terms: list[str],
     """Ask LLM for alternative search terms when nothing was found."""
     thinking = getattr(config, "thinking_enabled", False)
     provider = get_provider(config)
-    prompt = RETRY_PROMPT.format(
+    prompt = get_retry_prompt().format(
         query=query, search_terms=search_terms, user_query=user_query,
     )
     prompt = _apply_thinking(prompt, config)

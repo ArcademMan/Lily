@@ -6,6 +6,7 @@ import ctypes.wintypes
 import keyboard as kb
 
 from core.actions.base import Action
+from core.i18n import t
 from core.utils.win32 import get_windows, find_window
 
 user32 = ctypes.windll.user32
@@ -48,7 +49,7 @@ def _get_monitors() -> list[_RECT]:
 
 
 class WindowAction(Action):
-    def execute(self, intent: dict, config) -> str:
+    def execute(self, intent: dict, config, **kwargs) -> str:
         parameter = intent.get("parameter", "").strip().lower()
         query = intent.get("query", "").strip()
         terms = intent.get("search_terms", [])
@@ -57,7 +58,7 @@ class WindowAction(Action):
             return self._close_explorer()
         elif parameter in ("minimize_all", "show_desktop"):
             kb.send("win+d")
-            return "Tutto minimizzato."
+            return t("window_all_minimized")
         elif parameter == "snap_left":
             return self._snap(query, "left", terms)
         elif parameter == "snap_right":
@@ -73,7 +74,7 @@ class WindowAction(Action):
         elif parameter.startswith("nudge_"):
             return self._nudge(query, parameter, terms)
 
-        return "Comando finestra non riconosciuto."
+        return t("window_unknown_command")
 
     def _close_explorer(self) -> str:
         closed = 0
@@ -82,16 +83,16 @@ class WindowAction(Action):
                 user32.PostMessageW(w["hwnd"], WM_CLOSE, 0, 0)
                 closed += 1
         if closed == 0:
-            return "Nessuna cartella aperta."
-        return f"Chiuse {closed} cartelle." if closed > 1 else "Chiusa una cartella."
+            return t("window_no_folders")
+        return t("window_folders_closed_many", count=closed) if closed > 1 else t("window_folders_closed_one")
 
     def _snap(self, query: str, direction: str, terms: list[str] = None) -> str:
         if not query:
-            return "Non hai specificato quale finestra spostare."
+            return t("window_no_query")
 
         target = find_window(query, search_terms=terms)
         if not target:
-            return f"Non trovo la finestra {query}."
+            return t("window_not_found", query=query)
 
         hwnd = target["hwnd"]
         user32.SetForegroundWindow(hwnd)
@@ -113,20 +114,20 @@ class WindowAction(Action):
             x, y, w, h = work.left + mon_w // 2, work.top, mon_w // 2, mon_h
 
         user32.MoveWindow(hwnd, x, y, w, h, True)
-        lato = "sinistra" if direction == "left" else "destra"
-        return f"Spostato a {lato}."
+        lato = t("window_snap_left") if direction == "left" else t("window_snap_right")
+        return t("window_snapped", side=lato)
 
     def _move_to_other_monitor(self, query: str, terms: list[str] = None) -> str:
         if not query:
-            return "Non hai specificato quale finestra spostare."
+            return t("window_no_query")
 
         target = find_window(query, include_minimized=True, search_terms=terms)
         if not target:
-            return f"Non trovo la finestra {query}."
+            return t("window_not_found", query=query)
 
         monitors = _get_monitors()
         if len(monitors) < 2:
-            return "C'è un solo monitor collegato."
+            return t("window_single_monitor")
 
         hwnd = target["hwnd"]
         user32.ShowWindow(hwnd, SW_RESTORE)
@@ -155,40 +156,39 @@ class WindowAction(Action):
 
         user32.MoveWindow(hwnd, new_x, new_y, win_w, win_h, True)
         user32.SetForegroundWindow(hwnd)
-        return f"Spostato sull'altro schermo."
+        return t("window_moved_monitor")
 
     def _restore(self, query: str, terms: list[str] = None) -> str:
         if not query:
-            return "Non hai specificato quale finestra ripristinare."
+            return t("window_no_restore_query")
 
         target = find_window(query, include_minimized=True, search_terms=terms)
         if not target:
-            return f"Non trovo la finestra {query}."
+            return t("window_not_found", query=query)
 
         hwnd = target["hwnd"]
         user32.ShowWindow(hwnd, SW_RESTORE)
         user32.SetForegroundWindow(hwnd)
-        name = query
-        return f"Ripristinato {name}."
+        return t("window_restored", name=query)
 
     def _minimize(self, query: str, terms: list[str] = None) -> str:
         if not query:
-            return "Non hai specificato quale finestra minimizzare."
+            return t("window_no_minimize_query")
 
         target = find_window(query, search_terms=terms)
         if not target:
-            return f"Non trovo la finestra {query}."
+            return t("window_not_found", query=query)
 
         user32.ShowWindow(target["hwnd"], SW_MINIMIZE)
-        return f"Minimizzato {query}."
+        return t("window_minimized", query=query)
 
     def _nudge(self, query: str, parameter: str, terms: list[str] = None) -> str:
         if not query:
-            return "Non hai specificato quale finestra spostare."
+            return t("window_no_nudge_query")
 
         target = find_window(query, search_terms=terms)
         if not target:
-            return f"Non trovo la finestra {query}."
+            return t("window_not_found", query=query)
 
         hwnd = target["hwnd"]
         rect = _RECT()
@@ -219,7 +219,7 @@ class WindowAction(Action):
             x += pixels
 
         user32.MoveWindow(hwnd, x, y, w, h, True)
-        return f"Spostato di {pixels} pixel."
+        return t("window_nudged", pixels=pixels)
 
     def _close_all(self) -> str:
         skip_classes = {"Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Progman", "WorkerW"}
@@ -232,5 +232,5 @@ class WindowAction(Action):
             user32.PostMessageW(w["hwnd"], WM_CLOSE, 0, 0)
             closed += 1
         if closed == 0:
-            return "Nessuna finestra da chiudere."
-        return f"Chiuse {closed} finestre."
+            return t("window_no_close_target")
+        return t("window_closed_many", count=closed)

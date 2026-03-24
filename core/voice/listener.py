@@ -4,6 +4,7 @@ import time
 import numpy as np
 import sounddevice as sd
 
+from core.i18n import t
 from core.signal import Signal
 from core.voice.transcriber import transcribe
 
@@ -29,7 +30,7 @@ class ListenWorker:
 
     def _run(self):
         if self.model is None:
-            self.error.emit("Modello Whisper non caricato.")
+            self.error.emit(t("whisper_not_loaded"))
             self.finished.emit()
             return
 
@@ -37,17 +38,17 @@ class ListenWorker:
         try:
             audio = self._record()
             if audio is None or len(audio) < self.SAMPLE_RATE * 0.3:
-                self.error.emit("Nessun audio rilevato.")
+                self.error.emit(t("whisper_no_audio"))
                 return
 
-            self.status_changed.emit("processing")
+            self.status_changed.emit("transcribing")
             text = transcribe(self.model, audio, self.model_size)
             if text:
                 self.transcription_ready.emit(text)
             else:
-                self.error.emit("Nessun testo riconosciuto.")
+                self.error.emit(t("whisper_no_text"))
         except Exception as e:
-            self.error.emit(f"Errore: {e}")
+            self.error.emit(t("error_generic", e=e))
         finally:
             self.status_changed.emit("idle")
             self.finished.emit()
@@ -70,7 +71,7 @@ class ListenWorker:
                 while not self._stop_event.is_set():
                     self._stop_event.wait(0.05)
         except Exception as e:
-            self.error.emit(f"Errore microfono: {e}")
+            self.error.emit(t("mic_error", e=e))
             return None
 
         chunks = []

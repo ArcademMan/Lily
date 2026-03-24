@@ -7,16 +7,16 @@ import numpy as np
 import sounddevice as sd
 import keyboard
 
+from core.i18n import t
 from core.voice.transcriber import transcribe
-from core.utils.audio import record_until_silence, SAMPLE_RATE, play_beep
+from core.utils.audio import SAMPLE_RATE, play_beep
 
 SPEECH_THRESHOLD = 0.005
 
 
 def run_dictation(whisper_model, config, state_changed, result_ready, play_beep,
-                  initial_text: str = ""):
-    """Dettatura a segmenti: registra, trascrive e digita al cursore."""
-    segment_silence = getattr(config, "dictation_silence_duration", 3.5)
+                  countdown=None, initial_text: str = ""):
+    """Dettatura continua: registra tutto l'audio, trascrive una volta alla fine."""
     silence_timeout = getattr(config, "dictation_silence_timeout", 8)
     device = config.mic_device if config.mic_device is not None else None
     audio_q = _queue.Queue()
@@ -36,109 +36,81 @@ def run_dictation(whisper_model, config, state_changed, result_ready, play_beep,
         stream.start()
     except Exception as e:
         print(f"[Dettatura] Errore mic: {e}")
-        result_ready.emit("", f"Errore microfono: {e}")
+        result_ready.emit("", t("mic_error", e=e))
         return
-
-    segments_written = 0
 
     if initial_text:
         print(f"[Dettatura] Testo iniziale: {initial_text}")
         keyboard.write(initial_text)
-        segments_written += 1
         result_ready.emit("Dettatura", initial_text)
 
+    all_chunks = []
     last_speech_time = _time.time()
+    has_speech = False
+    last_countdown_val = -1
 
     try:
         while True:
-            # Fase 1: aspetta parlato
-            has_speech = False
-            while not has_speech:
-                _time.sleep(0.05)
-                if _time.time() - last_speech_time > silence_timeout:
-                    print(f"[Dettatura] Auto-stop: {silence_timeout}s senza parlato.")
-                    raise StopIteration
+            _time.sleep(0.05)
 
-                latest = None
-                while not audio_q.empty():
-                    latest = audio_q.get()
-                if latest is not None:
-                    energy = float(np.sqrt(np.mean(latest ** 2)))
-                    if energy > SPEECH_THRESHOLD:
-                        has_speech = True
-                        last_speech_time = _time.time()
-
-            # Fase 2: registra segmento
-            print("[Dettatura] Parlato rilevato, registro segmento...")
-            segment_chunks = []
             while not audio_q.empty():
-                segment_chunks.append(audio_q.get())
+                chunk = audio_q.get()
+                all_chunks.append(chunk)
+                energy = float(np.sqrt(np.mean(chunk ** 2)))
+                if energy > SPEECH_THRESHOLD:
+                    has_speech = True
+                    last_speech_time = _time.time()
 
-            silence_start = None
-            while True:
-                _time.sleep(0.03)
-                got_chunk = False
-                while not audio_q.empty():
-                    chunk = audio_q.get()
-                    segment_chunks.append(chunk)
-                    got_chunk = True
-                    energy = float(np.sqrt(np.mean(chunk ** 2)))
-                    if energy > SPEECH_THRESHOLD:
-                        silence_start = None
-                        last_speech_time = _time.time()
-                    elif silence_start is None:
-                        silence_start = _time.time()
+            silence_elapsed = _time.time() - last_speech_time
+            remaining = int(silence_timeout - silence_elapsed)
+            if countdown and has_speech and remaining <= silence_timeout:
+                if remaining != last_countdown_val:
+                    last_countdown_val = remaining
+                    countdown.emit(max(remaining, 0))
 
-                if not got_chunk and silence_start is None:
-                    silence_start = _time.time()
+            if silence_elapsed > silence_timeout:
+                print(f"[Dettatura] Auto-stop: {silence_timeout}s senza parlato.")
+                break
 
-                if silence_start and _time.time() - silence_start >= segment_silence:
-                    break
-
-            # Fase 3: trascrivi e digita
-            if not segment_chunks:
-                continue
-
-            audio = np.concatenate(segment_chunks)
-            duration = len(audio) / SAMPLE_RATE
-            if duration < 0.3:
-                continue
-
-            print(f"[Dettatura] Segmento: {duration:.1f}s, trascrivo...")
-            text = transcribe(whisper_model, audio, config.whisper_model)
-
-            if text:
-                print(f"[Dettatura] Testo: {text}")
-                if segments_written > 0:
-                    keyboard.write(" ")
-                keyboard.write(text)
-                segments_written += 1
-                result_ready.emit("Dettatura", text)
-
-    except StopIteration:
-        pass
     except Exception as e:
         print(f"[Dettatura] Errore: {e}")
     finally:
         stream.stop()
         stream.close()
-        play_beep(freq=400, duration=200)
-        end_msg = f"Dettatura terminata. {segments_written} segmenti trascritti."
-        print(f"[Dettatura] {end_msg}")
-        result_ready.emit("", end_msg)
-        state_changed.emit("idle")
+        if countdown:
+            countdown.emit(-1)
+
+    # Trascrivi tutto in un colpo
+    if has_speech and all_chunks:
+        audio = np.concatenate(all_chunks)
+        duration = len(audio) / SAMPLE_RATE
+        if duration >= 0.3:
+            state_changed.emit("transcribing")
+            print(f"[Dettatura] Audio totale: {duration:.1f}s, trascrivo...")
+            text = transcribe(whisper_model, audio, config.whisper_model)
+            if text:
+                print(f"[Dettatura] Testo: {text}")
+                if initial_text:
+                    keyboard.write(" ")
+                keyboard.write(text)
+                result_ready.emit("Dettatura", text)
+
+    play_beep(freq=400, duration=200)
+    end_msg = t("dictation_ended", count=1 if has_speech else 0)
+    print(f"[Dettatura] {end_msg}")
+    result_ready.emit("", end_msg)
+    state_changed.emit("idle")
 
 
 def run_dictation_to_window(whisper_model, config, state_changed, result_ready,
-                            play_beep, tts, intent: dict):
-    """Dettatura mirata: ascolta, trascrive, poi incolla e invia sulla finestra target."""
+                            play_beep, tts, intent: dict, countdown=None):
+    """Dettatura mirata: ascolta a segmenti, trascrive, poi incolla e invia sulla finestra target."""
     import ctypes
     import keyboard as kb
     from core.utils.win32 import find_window_hwnd
     from core.utils.clipboard import clipboard_paste
 
-    silence_duration = getattr(config, "dictation_silence_duration", 3.5)
-    timeout = getattr(config, "dictation_max_duration", 60)
+    silence_timeout = getattr(config, "dictation_silence_timeout", 8)
     device = config.mic_device if config.mic_device is not None else None
     user32 = ctypes.windll.user32
 
@@ -147,36 +119,86 @@ def run_dictation_to_window(whisper_model, config, state_changed, result_ready,
     search_terms = intent.get("search_terms", [])
     print(f"[Dettatura→Finestra] Ascolto per {query}...")
 
-    audio = record_until_silence(
-        device=device, timeout=timeout,
-        silence_duration=silence_duration,
-        speech_threshold=SPEECH_THRESHOLD,
-    )
+    audio_q = _queue.Queue()
 
-    if audio is None:
+    def callback(indata, frames, time_info, status):
+        audio_q.put(indata[:, 0].copy())
+
+    try:
+        mic_stream = sd.InputStream(
+            samplerate=SAMPLE_RATE, channels=1,
+            dtype="float32", device=device,
+            blocksize=1600, callback=callback,
+        )
+        mic_stream.start()
+    except Exception as e:
+        print(f"[Dettatura→Finestra] Errore mic: {e}")
         play_beep(freq=400, duration=200)
-        result_ready.emit("", "Nessun audio rilevato.")
+        result_ready.emit("", t("mic_error", e=e))
         state_changed.emit("idle")
         return
 
-    # Trascrivi
-    duration = len(audio) / SAMPLE_RATE
-    print(f"[Dettatura→Finestra] Audio: {duration:.1f}s, trascrivo...")
+    all_chunks = []
+    last_speech_time = _time.time()
+    has_speech = False
+    last_countdown_val = -1
 
-    dictated_text = transcribe(whisper_model, audio, config.whisper_model)
+    try:
+        while True:
+            _time.sleep(0.05)
+
+            while not audio_q.empty():
+                chunk = audio_q.get()
+                all_chunks.append(chunk)
+                energy = float(np.sqrt(np.mean(chunk ** 2)))
+                if energy > SPEECH_THRESHOLD:
+                    has_speech = True
+                    last_speech_time = _time.time()
+
+            silence_elapsed = _time.time() - last_speech_time
+            remaining = int(silence_timeout - silence_elapsed)
+            if countdown and has_speech and remaining <= silence_timeout:
+                if remaining != last_countdown_val:
+                    last_countdown_val = remaining
+                    countdown.emit(max(remaining, 0))
+
+            if silence_elapsed > silence_timeout:
+                print(f"[Dettatura→Finestra] Auto-stop: {silence_timeout}s senza parlato.")
+                break
+
+    except Exception as e:
+        print(f"[Dettatura→Finestra] Errore: {e}")
+    finally:
+        mic_stream.stop()
+        mic_stream.close()
+        if countdown:
+            countdown.emit(-1)
+
+    # Trascrivi tutto in un colpo
+    dictated_text = ""
+    if has_speech and all_chunks:
+        audio = np.concatenate(all_chunks)
+        duration = len(audio) / SAMPLE_RATE
+        if duration >= 0.3:
+            state_changed.emit("transcribing")
+            print(f"[Dettatura→Finestra] Audio totale: {duration:.1f}s, trascrivo...")
+            dictated_text = transcribe(whisper_model, audio, config.whisper_model) or ""
+            if dictated_text:
+                print(f"[Dettatura→Finestra] Testo: {dictated_text}")
+                result_ready.emit("Dettatura", dictated_text)
     if not dictated_text:
         play_beep(freq=400, duration=200)
-        result_ready.emit("", "Non ho capito cosa hai detto.")
+        result_ready.emit("", t("dictation_no_audio"))
         state_changed.emit("idle")
         return
 
-    print(f"[Dettatura→Finestra] Testo: {dictated_text}")
+    print(f"[Dettatura→Finestra] Testo completo: {dictated_text}")
 
     # Trova finestra e invia
     hwnd = find_window_hwnd(query, search_terms=search_terms)
     if hwnd is None:
         play_beep(freq=400, duration=200)
-        result_ready.emit("", f"Non trovo la finestra {query}.")
+        result_ready.emit("", t("dictation_window_not_found", query=query))
         state_changed.emit("idle")
         return
 
@@ -196,6 +218,6 @@ def run_dictation_to_window(whisper_model, config, state_changed, result_ready,
         user32.SetForegroundWindow(prev_hwnd)
 
     play_beep(freq=400, duration=200)
-    result_ready.emit(dictated_text, f"Inviato su {query}.")
-    tts.speak(f"Inviato su {query}.")
+    result_ready.emit(dictated_text, t("dictation_sent", query=query))
+    tts.speak(t("dictation_sent", query=query))
     state_changed.emit("idle")

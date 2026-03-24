@@ -2,29 +2,20 @@ import threading
 
 import numpy as np
 
+from core.i18n import t, t_list
 from core.signal import Signal
 
-HALLUCINATION_FILTER = [
-    "sottotitoli", "qtss", "amara.org", "sottotitolato",
-    "revisione", "traduzione", "trascrizione", "applausi",
-]
 
-INITIAL_PROMPT_BASE = "Apri, avvia, cerca, chiudi, cartella, volume, sito web, programma, gioco, screenshot, timer, scrivi, invia, modalità dettatura, sposta, minimizza, riavviati, stop."
-INITIAL_PROMPT_EXTENDED = (
-    INITIAL_PROMPT_BASE + " "
-    "Elden Ring, Lethal Company, Minecraft, Fortnite, Valorant, Discord, Photoshop, "
-    "Premiere Pro, Visual Studio Code, Blender, Steam, Spotify, Chrome, Firefox, OBS, "
-    "Claude, Claude Code, Haiku, WhatsApp, Lily."
-)
-
-# Per-model transcription settings: (beam_size, vad_filter, initial_prompt)
-MODEL_SETTINGS = {
-    "tiny":     (1, False, INITIAL_PROMPT_BASE),
-    "base":     (1, False, INITIAL_PROMPT_BASE),
-    "small":    (3, False, INITIAL_PROMPT_BASE),
-    "medium":   (3, True,  INITIAL_PROMPT_EXTENDED),
-    "large-v3": (5, True,  INITIAL_PROMPT_EXTENDED),
-}
+def _model_settings() -> dict:
+    base = t("whisper_initial_prompt_base")
+    extended = t("whisper_initial_prompt_extended")
+    return {
+        "tiny":     (1, False, base),
+        "base":     (1, False, base),
+        "small":    (3, False, base),
+        "medium":   (3, True,  extended),
+        "large-v3": (5, True,  extended),
+    }
 
 
 class WhisperLoader:
@@ -61,9 +52,9 @@ class WhisperLoader:
             compute = "float16" if self.device == "cuda" else "int8"
             self.model = WhisperModel(model_path, device=self.device, compute_type=compute)
             label = "GPU" if self.device == "cuda" else "CPU"
-            self.finished.emit(True, f"Modello Whisper caricato ({label}).")
+            self.finished.emit(True, t("whisper_loaded", label=label))
         except Exception as e:
-            self.finished.emit(False, f"Errore caricamento Whisper: {e}")
+            self.finished.emit(False, t("whisper_load_error", e=e))
 
 
 def transcribe(model, audio: np.ndarray, model_size: str = "base") -> str:
@@ -71,12 +62,13 @@ def transcribe(model, audio: np.ndarray, model_size: str = "base") -> str:
     t0 = _time.perf_counter()
     print("[Whisper] Trascrizione in corso...")
 
-    beam_size, vad_filter, initial_prompt = MODEL_SETTINGS.get(
-        model_size, MODEL_SETTINGS["base"]
+    settings = _model_settings()
+    beam_size, vad_filter, initial_prompt = settings.get(
+        model_size, settings["base"]
     )
 
     kwargs = dict(
-        language="it",
+        language=t("whisper_language"),
         beam_size=beam_size,
         vad_filter=vad_filter,
         initial_prompt=initial_prompt,
@@ -92,7 +84,7 @@ def transcribe(model, audio: np.ndarray, model_size: str = "base") -> str:
     print(f"[Whisper] Segmenti: {len(texts)}, testo: '{result}'")
     print(f"[Whisper] Tempo trascrizione: {_time.perf_counter() - t0:.2f}s")
 
-    if any(h in result.lower() for h in HALLUCINATION_FILTER):
+    if any(h in result.lower() for h in t_list("hallucination_words")):
         print("[Whisper] Filtrato: allucinazione rilevata")
         return ""
     return result

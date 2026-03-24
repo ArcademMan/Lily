@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from core.i18n import t, t_set
 from core.utils.audio import record_until_silence, SAMPLE_RATE
 from core.voice.transcriber import transcribe
 
@@ -32,6 +33,7 @@ def wait_for_confirmation(whisper_model, config, state_changed) -> bool:
     if duration < 0.2:
         return False
 
+    state_changed.emit("transcribing")
     response = transcribe(whisper_model, audio, config.whisper_model)
     print(f"[Sicurezza] Risposta: '{response}'")
 
@@ -47,21 +49,14 @@ def wait_for_confirmation(whisper_model, config, state_changed) -> bool:
     return _llm_confirm(response, config)
 
 
-_YES_KEYWORDS = {"sì", "si", "ok", "vai", "fallo", "certo", "procedi", "confermo",
-                  "esatto", "certamente", "ovvio", "ovviamente", "assolutamente",
-                  "sì chiudi", "sì fallo", "ok vai", "yes"}
-_NO_KEYWORDS = {"no", "annulla", "stop", "lascia stare", "non farlo", "aspetta",
-                "fermati", "niente", "lascia", "no grazie", "nope", "non voglio"}
-
-
 def _keyword_confirm(response: str) -> bool | None:
     """Fast yes/no detection via keywords. Returns None if ambiguous."""
     text = response.strip().lower()
     # Check exact match or phrase match
-    for kw in _YES_KEYWORDS:
+    for kw in t_set("yes_keywords"):
         if kw in text:
             return True
-    for kw in _NO_KEYWORDS:
+    for kw in t_set("no_keywords"):
         if kw in text:
             return False
     return None  # ambiguous — fall back to LLM
@@ -110,12 +105,12 @@ If unclear, default to false (safer)."""
 def get_confirm_message(intent_type: str, query: str, parameter: str = "") -> str:
     """Genera il messaggio di conferma in base al tipo di azione."""
     if intent_type == "close_program":
-        return f"Vuoi che chiuda {query}?" if query else "Vuoi che chiuda il programma?"
+        return t("confirm_close_query", query=query) if query else t("confirm_close_generic")
     if intent_type == "window":
         if parameter == "close_all":
-            return "Vuoi che chiuda tutte le finestre?"
+            return t("confirm_close_all_windows")
         if parameter == "close_explorer":
-            return "Vuoi che chiuda tutte le cartelle aperte?"
+            return t("confirm_close_all_folders")
     if intent_type == "notes" and parameter == "svuota":
-        return "Vuoi cancellare tutte le note?"
-    return "Confermi l'azione?"
+        return t("confirm_delete_all_notes")
+    return t("confirm_generic")

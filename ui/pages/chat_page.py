@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 import qtawesome as qta
 
+from core.i18n import t
 from ui.style import ACCENT, TEXT, TEXT_SEC, CARD_BG, CARD_BORDER
 
 _AVATAR_SIZE = 28
@@ -43,7 +44,7 @@ def _make_circle_pixmap(path: str, size: int) -> QPixmap:
 
 # ── Worker thread per pipeline completa ────────────────────────────
 class _ChatWorker(QThread):
-    finished = Signal(str)
+    finished = Signal(str, int, int)  # response, input_tokens, output_tokens
 
     def __init__(self, text: str, assistant):
         super().__init__()
@@ -51,16 +52,23 @@ class _ChatWorker(QThread):
         self.assistant = assistant
 
     def run(self):
+        from core.llm.token_tracker import TokenTracker
+        tracker = TokenTracker()
+        before_in, before_out = tracker.session_totals()
         try:
             response = self.assistant.process_text_chat(self.text)
         except Exception as e:
-            response = f"Errore: {e}"
-        self.finished.emit(response)
+            response = t("error_generic", e=e)
+        after_in, after_out = tracker.session_totals()
+        tok_in = after_in - before_in
+        tok_out = after_out - before_out
+        self.finished.emit(response, tok_in, tok_out)
 
 
 # ── Bolla messaggio ────────────────────────────────────────────────
 class ChatBubble(QFrame):
-    def __init__(self, text: str, is_user: bool, is_voice: bool = False, parent=None):
+    def __init__(self, text: str, is_user: bool, is_voice: bool = False,
+                 tok_in: int = 0, tok_out: int = 0, parent=None):
         super().__init__(parent)
         self.setObjectName("chatBubble")
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
@@ -109,7 +117,7 @@ class ChatBubble(QFrame):
                 voice_tag = QLabel()
                 tag_color = "rgba(255,255,255,160)" if is_user else "rgba(255,255,255,80)"
                 voice_tag.setText(
-                    f'<span style="font-size: 10px; color: {tag_color};">\U0001F3A4 voce</span>'
+                    f'<span style="font-size: 10px; color: {tag_color};">\U0001F3A4 {t("chat_voice_tag")}</span>'
                 )
                 voice_tag.setStyleSheet("QLabel { background: transparent; border: none; }")
                 top_row.addWidget(voice_tag)
@@ -123,6 +131,17 @@ class ChatBubble(QFrame):
             f"QLabel {{ color: {text_color}; font-size: 13px; background: transparent; border: none; }}"
         )
         layout.addWidget(label)
+
+        # Token info (solo per bolle di Lily, se presenti)
+        if not is_user and (tok_in > 0 or tok_out > 0):
+            tok_label = QLabel(f"\u25B8 {tok_in} in \u2022 {tok_out} out")
+            tok_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+            tok_label.setStyleSheet(
+                "QLabel { color: rgba(255,255,255,40); font-size: 9px;"
+                " background: transparent; border: none; }"
+            )
+            layout.addWidget(tok_label)
+
         self.setMaximumWidth(420)
 
 
@@ -138,8 +157,12 @@ class ChatPage(QWidget):
 
         self._build_ui()
 
+        # Snapshot token per calcolo delta voce
+        self._voice_tok_snapshot = (0, 0)
+
         # Connetti segnali dal bridge (comandi vocali)
         if bridge:
+            bridge.state_changed.connect(self._on_state_for_tokens)
             bridge.result_ready.connect(self._on_voice_result)
 
     def _build_ui(self):
@@ -184,7 +207,7 @@ class ChatPage(QWidget):
         header.addSpacing(8)
 
         clear_btn = QPushButton()
-        clear_btn.setToolTip("Cancella chat")
+        clear_btn.setToolTip(t("chat_clear"))
         clear_btn.setIcon(qta.icon("mdi6.delete-outline", color="#EAEAEA"))
         clear_btn.setIconSize(QSize(18, 18))
         clear_btn.setFixedSize(36, 36)
@@ -221,7 +244,7 @@ class ChatPage(QWidget):
         input_bar.setSpacing(8)
 
         self._input = QLineEdit()
-        self._input.setPlaceholderText("Scrivi un messaggio...")
+        self._input.setPlaceholderText(t("chat_placeholder"))
         self._input.setFixedHeight(42)
         self._input.setStyleSheet(
             "QLineEdit {"
@@ -321,19 +344,14 @@ class ChatPage(QWidget):
         """Aggiorna l'indicatore del contesto che verrà inviato all'LLM."""
         try:
             from core.llm.prompts import (
-                CHAT_SYSTEM_PROMPT, SYSTEM_PROMPT_OLLAMA, SYSTEM_PROMPT_CLAUDE,
-                _get_lily_paths_block,
+                get_classify_prompt, get_chat_system_prompt,
             )
 
             provider = getattr(self.config, "provider", "ollama")
-            paths_block = _get_lily_paths_block()
 
             # System prompt: sia quello di chat che quello di classificazione
-            chat_system = CHAT_SYSTEM_PROMPT + paths_block
-            if provider in ("anthropic", "openai", "gemini"):
-                classify_system = SYSTEM_PROMPT_CLAUDE + paths_block
-            else:
-                classify_system = SYSTEM_PROMPT_OLLAMA + paths_block
+            chat_system = get_chat_system_prompt()
+            classify_system = get_classify_prompt(provider)
 
             # Il più grande dei due (classify è usato dalla voce, chat dalla chat testuale)
             system_text = max(chat_system, classify_system, key=len)
@@ -365,9 +383,9 @@ class ChatPage(QWidget):
                 color = "#F44336"
 
             parts = [
-                f"Contesto: ~{total_ctx:,} tok",
-                f"sistema ~{system_tok:,}",
-                f"storia {msg_count} msg ~{history_tok:,}",
+                t("chat_context_info", total_ctx=total_ctx),
+                t("chat_context_system", system_tok=system_tok),
+                t("chat_context_history", msg_count=msg_count, history_tok=history_tok),
                 f'<span style="color: {color};">{pct:.0f}% di {max_ctx:,}</span>',
             ]
             self._context_label.setText("  |  ".join(parts))
@@ -375,7 +393,7 @@ class ChatPage(QWidget):
             self._context_label.setText("")
 
     def _show_welcome(self):
-        welcome = QLabel("Chiedimi qualsiasi cosa!")
+        welcome = QLabel(t("chat_welcome"))
         welcome.setObjectName("chatWelcome")
         welcome.setAlignment(Qt.AlignmentFlag.AlignCenter)
         welcome.setStyleSheet(
@@ -390,9 +408,10 @@ class ChatPage(QWidget):
             self._welcome_label.deleteLater()
             self._welcome_label = None
 
-    def _add_bubble(self, text: str, is_user: bool, is_voice: bool = False):
+    def _add_bubble(self, text: str, is_user: bool, is_voice: bool = False,
+                    tok_in: int = 0, tok_out: int = 0):
         self._remove_welcome()
-        bubble = ChatBubble(text, is_user, is_voice=is_voice)
+        bubble = ChatBubble(text, is_user, is_voice=is_voice, tok_in=tok_in, tok_out=tok_out)
 
         wrapper = QWidget()
         wrapper.setStyleSheet("background: transparent; border: none;")
@@ -424,12 +443,31 @@ class ChatPage(QWidget):
         vbar.setValue(vbar.maximum())
 
     # ── Messaggi vocali dal bridge ─────────────────────────────
+    def _on_state_for_tokens(self, state: str):
+        """Cattura snapshot token quando inizia il processing."""
+        if state == "processing":
+            try:
+                from core.llm.token_tracker import TokenTracker
+                self._voice_tok_snapshot = TokenTracker().session_totals()
+            except Exception:
+                self._voice_tok_snapshot = (0, 0)
+
     def _on_voice_result(self, text: str, result: str):
         """Riceve i risultati dei comandi vocali e li mostra come bolle."""
+        # Calcola token usati da questa richiesta vocale
+        tok_in = tok_out = 0
+        try:
+            from core.llm.token_tracker import TokenTracker
+            after_in, after_out = TokenTracker().session_totals()
+            tok_in = after_in - self._voice_tok_snapshot[0]
+            tok_out = after_out - self._voice_tok_snapshot[1]
+        except Exception:
+            pass
+
         if text:
             self._add_bubble(text, is_user=True, is_voice=True)
         if result:
-            self._add_bubble(result, is_user=False, is_voice=True)
+            self._add_bubble(result, is_user=False, is_voice=True, tok_in=tok_in, tok_out=tok_out)
         self._update_tokens()
         self._update_context()
 
@@ -443,7 +481,7 @@ class ChatPage(QWidget):
         self._add_bubble(text, is_user=True)
 
         # Indicatore "sta scrivendo..."
-        self._typing_label = QLabel("Lily sta scrivendo...")
+        self._typing_label = QLabel(t("chat_typing"))
         self._typing_label.setStyleSheet(
             f"QLabel {{ color: {TEXT_SEC}; font-size: 12px; font-style: italic;"
             f" background: transparent; border: none; padding-left: 8px; }}"
@@ -454,15 +492,15 @@ class ChatPage(QWidget):
 
         # Worker thread (pipeline completa: classify → execute)
         self._worker = _ChatWorker(text, self._assistant)
-        self._worker.finished.connect(self._on_response)
+        self._worker.finished.connect(self._on_chat_response)
         self._worker.start()
 
-    def _on_response(self, response: str):
+    def _on_chat_response(self, response: str, tok_in: int, tok_out: int):
         if hasattr(self, '_typing_label') and self._typing_label:
             self._typing_label.deleteLater()
             self._typing_label = None
 
-        self._add_bubble(response, is_user=False)
+        self._add_bubble(response, is_user=False, tok_in=tok_in, tok_out=tok_out)
         self._update_tokens()
         self._update_context()
         self._worker = None

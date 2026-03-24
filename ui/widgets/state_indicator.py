@@ -115,7 +115,7 @@ class StateIndicator(QWidget):
 
         if state == "listening":
             self._pulse_anim.start()
-        elif state in ("processing", "loading"):
+        elif state in ("processing", "loading", "transcribing"):
             self._arc_anim.start()
         self.update()
 
@@ -160,9 +160,20 @@ class StateIndicator(QWidget):
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.drawEllipse(QRectF(cx - ring_r, cy - ring_r, ring_r * 2, ring_r * 2))
 
-        # processing: rotating arc
+        # processing: rotating arc (purple)
         if self._state == "processing":
             arc_pen = QPen(_ACCENT, 3)
+            arc_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(arc_pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            arc_r = inner_r + 10
+            rect = QRectF(cx - arc_r, cy - arc_r, arc_r * 2, arc_r * 2)
+            start = int(self._arc_angle * 16)
+            p.drawArc(rect, start, 90 * 16)
+
+        # transcribing: rotating arc (cyan)
+        if self._state == "transcribing":
+            arc_pen = QPen(QColor(80, 200, 220), 3)
             arc_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             p.setPen(arc_pen)
             p.setBrush(Qt.BrushStyle.NoBrush)

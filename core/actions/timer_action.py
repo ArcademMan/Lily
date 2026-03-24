@@ -4,6 +4,7 @@ import winsound
 
 from core.signal import Signal
 from core.actions.base import Action
+from core.i18n import t
 
 
 class _TimerNotifier:
@@ -25,7 +26,7 @@ class TimerAction(Action):
     _recurring_timers: dict[str, dict] = {}  # id -> {seconds, label, timer}
     _lock = threading.Lock()
 
-    def execute(self, intent: dict, config) -> str:
+    def execute(self, intent: dict, config, **kwargs) -> str:
         parameter = intent.get("parameter", "").strip().lower()
 
         # Cancellazione timer
@@ -42,7 +43,7 @@ class TimerAction(Action):
 
         seconds = self._parse_duration(clean_param)
         if seconds <= 0:
-            return f"Durata timer non valida: '{parameter}'"
+            return t("timer_invalid_duration", parameter=parameter)
 
         label = intent.get("query", "").strip() or "Timer"
         human_duration = self._format_duration(seconds)
@@ -61,10 +62,10 @@ class TimerAction(Action):
             winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
             notifier = _TimerNotifier.instance()
             if is_reminder:
-                msg = f"Promemoria: {label}"
+                msg = t("timer_reminder_fire", label=label)
                 notifier.speak.emit(msg)
             else:
-                msg = f"Timer scaduto: {human_duration}"
+                msg = t("timer_fire", duration=human_duration)
                 notifier.speak.emit(msg)
             notifier.notify.emit(msg)
             with self._lock:
@@ -82,10 +83,10 @@ class TimerAction(Action):
 
         if is_reminder:
             print(f"[Timer] Promemoria impostato: {human_duration} - '{label}'")
-            return f"Ok, ti ricorderò tra {human_duration}: {label}."
+            return t("timer_reminder_set", duration=human_duration, label=label)
         else:
             print(f"[Timer] Impostato: {human_duration}")
-            return f"Timer impostato: {human_duration}."
+            return t("timer_set", duration=human_duration)
 
     def _start_recurring(self, seconds: int, label: str, human_duration: str,
                          is_reminder: bool) -> str:
@@ -98,7 +99,7 @@ class TimerAction(Action):
                 return
             winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
             notifier = _TimerNotifier.instance()
-            msg = f"Promemoria ricorrente: {label}" if is_reminder else f"Timer ricorrente: {human_duration}"
+            msg = t("timer_recurring_reminder_fire", label=label) if is_reminder else t("timer_recurring_fire", duration=human_duration)
             notifier.speak.emit(msg)
             notifier.notify.emit(msg)
             # Rilancia il prossimo tick solo se non cancellato
@@ -128,7 +129,7 @@ class TimerAction(Action):
             }
 
         print(f"[Timer] Ricorrente: ogni {human_duration} - '{label}'")
-        return f"Ok, ti ricorderò ogni {human_duration}: {label}."
+        return t("timer_recurring_set", duration=human_duration, label=label)
 
     def _cancel_all(self) -> str:
         with self._lock:
@@ -143,8 +144,8 @@ class TimerAction(Action):
                     info["timer"].cancel()
             self._recurring_timers.clear()
         if count == 0:
-            return "Nessun timer attivo."
-        return f"Rimossi {count} timer." if count > 1 else "Timer rimosso."
+            return t("timer_none_active")
+        return t("timer_removed_many", count=count) if count > 1 else t("timer_removed_one")
 
     def _list_timers(self) -> str:
         with self._lock:
@@ -152,13 +153,13 @@ class TimerAction(Action):
             recurring = len(self._recurring_timers)
         total = single + recurring
         if total == 0:
-            return "Nessun timer attivo."
+            return t("timer_none_active")
         parts = []
         if single:
-            parts.append(f"{single} timer")
+            parts.append(t("timer_count_single", count=single))
         if recurring:
-            parts.append(f"{recurring} ricorrenti")
-        return f"Hai {' e '.join(parts)} attivi."
+            parts.append(t("timer_count_recurring", count=recurring))
+        return t("timer_active_list", parts=" e ".join(parts))
 
     @staticmethod
     def _parse_duration(text: str) -> int:

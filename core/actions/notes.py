@@ -7,6 +7,7 @@ import threading
 from datetime import datetime, date
 
 from core.actions.base import Action
+from core.i18n import t, t_set, t_list
 from config import SETTINGS_DIR
 
 _NOTES_FILE = os.path.join(SETTINGS_DIR, "notes.json")
@@ -34,20 +35,32 @@ class NotesAction(Action):
     _DELETE_CMDS = {"delete", "cancella", "rimuovi", "togli"}
     _CLEAR_CMDS = {"clear", "svuota", "cancella_tutto"}
 
-    def execute(self, intent: dict, config) -> str:
+    @classmethod
+    def _is_read(cls, param: str) -> bool:
+        return param in cls._READ_CMDS
+
+    @classmethod
+    def _is_delete(cls, param: str) -> bool:
+        return param in cls._DELETE_CMDS
+
+    @classmethod
+    def _is_clear(cls, param: str) -> bool:
+        return param in cls._CLEAR_CMDS
+
+    def execute(self, intent: dict, config, **kwargs) -> str:
         parameter = intent.get("parameter", "").strip().lower()
         query = intent.get("query", "").strip()
 
-        if parameter in self._READ_CMDS:
+        if self._is_read(parameter):
             return self._read_notes(query)
-        elif parameter in self._DELETE_CMDS:
+        elif self._is_delete(parameter):
             return self._delete_note(query)
-        elif parameter in self._CLEAR_CMDS:
+        elif self._is_clear(parameter):
             return self._clear_notes()
         else:
             text = query or parameter
             if not text:
-                return "Non ho capito cosa annotare."
+                return t("notes_nothing_to_save")
             return self._save_note(text)
 
     def _save_note(self, text: str) -> str:
@@ -59,20 +72,22 @@ class NotesAction(Action):
             })
             _save_notes(notes)
         print(f"[Note] Salvata: {text}")
-        return f"Nota salvata: {text}"
+        return t("notes_saved", text=text)
 
     def _read_notes(self, query: str) -> str:
         with _lock:
             notes = _load_notes()
         if not notes:
-            return "Non hai nessuna nota."
+            return t("notes_empty")
 
         q = query.lower()
 
         # ── Filtro posizionale: prima / ultima / ultime N ─────────
-        if q in ("prima", "la prima", "più vecchia"):
+        first_kw = t_set("note_first_keywords")
+        last_kw = t_set("note_last_keywords")
+        if q in first_kw:
             return self._speak_note(notes[0])
-        if q in ("ultima", "l'ultima", "più recente"):
+        if q in last_kw:
             return self._speak_note(notes[-1])
 
         m = re.match(r"ultim[eai]\s*(\d+)", q)
@@ -85,47 +100,47 @@ class NotesAction(Action):
         if date_filter:
             matched = [n for n in notes if self._note_date(n) == date_filter]
             if not matched:
-                return f"Nessuna nota per {self._format_date_label(date_filter)}."
+                return t("notes_none_for_date", label=self._format_date_label(date_filter))
             return self._speak_notes(matched, len(notes),
-                                     intro=f"Note di {self._format_date_label(date_filter)}")
+                                     intro=t("notes_header_date", label=self._format_date_label(date_filter)))
 
         # ── Filtro per contenuto ──────────────────────────────────
         if q and q not in ("tutte", "tutto", "tutte le note", ""):
             matched = [n for n in notes if q in n["text"].lower()]
             if not matched:
-                return f"Nessuna nota trovata con '{query}'."
+                return t("notes_none_matching", query=query)
             return self._speak_notes(matched, len(notes),
-                                     intro=f"Ho trovato {len(matched)} nota" if len(matched) == 1
-                                     else f"Ho trovato {len(matched)} note")
+                                     intro=t("notes_found_one", count=len(matched), query=query) if len(matched) == 1
+                                     else t("notes_found_many", count=len(matched), query=query))
 
         # ── Tutte (ultime 5) ─────────────────────────────────────
         return self._speak_notes(notes[-5:], len(notes))
 
     def _delete_note(self, query: str) -> str:
         if not query:
-            return "Non ho capito quale nota cancellare."
+            return t("notes_delete_no_query")
         with _lock:
             notes = _load_notes()
             query_lower = query.lower()
             remaining = [n for n in notes if query_lower not in n["text"].lower()]
             removed = len(notes) - len(remaining)
             if removed == 0:
-                return f"Nessuna nota trovata con '{query}'."
+                return t("notes_delete_not_found", query=query)
             _save_notes(remaining)
         if removed == 1:
-            return "Nota cancellata."
-        return f"{removed} note cancellate."
+            return t("notes_deleted_one")
+        return t("notes_deleted_many", count=removed)
 
     def _clear_notes(self) -> str:
         with _lock:
             notes = _load_notes()
             count = len(notes)
             if count == 0:
-                return "Non hai nessuna nota da cancellare."
+                return t("notes_empty_to_delete")
             _save_notes([])
         if count == 1:
-            return "Nota cancellata."
-        return f"Tutte le {count} note cancellate."
+            return t("notes_deleted_one")
+        return t("notes_deleted_all", count=count)
 
     # ── Helpers parlabili ─────────────────────────────────────────
 
@@ -140,9 +155,9 @@ class NotesAction(Action):
             parts.append(f"{when}, {n['text']}")
 
         if not intro:
-            intro = f"Hai {total} nota" if total == 1 else f"Hai {total} note"
+            intro = t("notes_count_one", count=total) if total == 1 else t("notes_count_many", count=total)
             if len(notes) < total:
-                intro += f". Ecco le ultime {len(notes)}"
+                intro += ". " + t("notes_showing_last", count=len(notes))
 
         return intro + ". " + ". ".join(parts)
 
@@ -157,23 +172,26 @@ class NotesAction(Action):
 
     @staticmethod
     def _parse_date_filter(text: str) -> date | None:
+        today_word = t("today")
+        yesterday_word = t("yesterday")
+        today_prefix = t("note_today_prefix")
+        yesterday_prefix = t("note_yesterday_prefix")
+        months_list = t_list("months")
+
         today = date.today()
-        if text in ("oggi", "di oggi"):
+        if text in (today_word, today_prefix):
             return today
-        if text in ("ieri", "di ieri"):
+        if text in (yesterday_word, yesterday_prefix):
             from datetime import timedelta
             return today - timedelta(days=1)
         # "20 marzo", "20/03", "20-03"
-        m = re.match(r"(\d{1,2})[/\-\s]*(0?[1-9]|1[0-2]|"
-                     r"gennaio|febbraio|marzo|aprile|maggio|giugno|"
-                     r"luglio|agosto|settembre|ottobre|novembre|dicembre)", text)
+        months_pattern = "|".join(months_list)
+        m = re.match(r"(\d{1,2})[/\-\s]*(0?[1-9]|1[0-2]|" + months_pattern + r")", text)
         if m:
             day = int(m.group(1))
             month_str = m.group(2)
-            months = {"gennaio": 1, "febbraio": 2, "marzo": 3, "aprile": 4,
-                      "maggio": 5, "giugno": 6, "luglio": 7, "agosto": 8,
-                      "settembre": 9, "ottobre": 10, "novembre": 11, "dicembre": 12}
-            month = months.get(month_str, None) or int(month_str)
+            months_map = {name: i + 1 for i, name in enumerate(months_list)}
+            month = months_map.get(month_str, None) or int(month_str)
             try:
                 return date(today.year, month, day)
             except ValueError:
@@ -184,10 +202,10 @@ class NotesAction(Action):
     def _format_date_label(d: date) -> str:
         today = date.today()
         if d == today:
-            return "oggi"
+            return t("today")
         from datetime import timedelta
         if d == today - timedelta(days=1):
-            return "ieri"
+            return t("yesterday")
         return d.strftime("%d/%m")
 
     @staticmethod
@@ -196,10 +214,10 @@ class NotesAction(Action):
             dt = datetime.fromisoformat(iso_str)
             now = datetime.now()
             if dt.date() == now.date():
-                return f"oggi alle {dt.strftime('%H:%M')}"
+                return t("note_time_today", time=dt.strftime('%H:%M'))
             delta = (now.date() - dt.date()).days
             if delta == 1:
-                return f"ieri alle {dt.strftime('%H:%M')}"
-            return f"il {dt.strftime('%d/%m')} alle {dt.strftime('%H:%M')}"
+                return t("note_time_yesterday", time=dt.strftime('%H:%M'))
+            return t("note_time_other", date=dt.strftime('%d/%m'), time=dt.strftime('%H:%M'))
         except Exception:
             return ""

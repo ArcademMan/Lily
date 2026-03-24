@@ -17,6 +17,7 @@ _OLD_SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "s
 # ── Defaults ─────────────────────────────────────────────────────────────────
 # Settings che solo l'utente può modificare (provider, API key, modelli)
 USER_DEFAULTS = {
+    "language": "it",
     "provider": "ollama",
     "ollama_model": "qwen3b",
     "anthropic_api_key": "",

@@ -6,25 +6,26 @@ import os
 import threading
 import wave
 
+from core.i18n import t, t_dict
 from core.signal import Signal
 
 
-EDGE_VOICES = {
-    "Isabella": "it-IT-IsabellaNeural",
-    "Diego": "it-IT-DiegoNeural",
-    "Elsa": "it-IT-ElsaNeural",
-}
+def _edge_voices() -> dict:
+    return t_dict("tts_edge_voices")
+
+
+def _piper_voices() -> dict:
+    return t_dict("tts_piper_voices")
+
+
+def _default_voice() -> str:
+    return t("tts_default_voice")
+
 
 MODELS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "models", "tts",
 )
-
-PIPER_VOICES = {
-    "Paola": "it_IT-paola-medium",
-}
-
-DEFAULT_VOICE = "Isabella"
 
 
 class TTSEngine:
@@ -32,8 +33,10 @@ class TTSEngine:
 
     finished = Signal()
 
-    def __init__(self, voice: str = DEFAULT_VOICE, enabled: bool = True):
-        self._voice = voice
+    def __init__(self, voice: str = None, enabled: bool = True):
+        if voice is None:
+            voice = _default_voice()
+        self._voice = voice or _default_voice()
         self._enabled = enabled
         self._speaking = False
         self._done_event = threading.Event()
@@ -87,7 +90,8 @@ class TTSEngine:
     def _speak_edge(self, text: str):
         import edge_tts
 
-        voice_id = EDGE_VOICES.get(self._voice, EDGE_VOICES[DEFAULT_VOICE])
+        edge_voices = _edge_voices()
+        voice_id = edge_voices.get(self._voice, edge_voices[_default_voice()])
 
         async def _generate():
             communicate = edge_tts.Communicate(text, voice_id)
@@ -115,7 +119,9 @@ class TTSEngine:
 
         from piper import PiperVoice
 
-        voice_name = list(PIPER_VOICES.values())[0]
+        piper_voices = _piper_voices()
+        voice_entry = list(piper_voices.values())[0]
+        voice_name = voice_entry[0] if isinstance(voice_entry, (list, tuple)) else voice_entry
         model_path = os.path.join(MODELS_DIR, f"{voice_name}.onnx")
 
         if not os.path.exists(model_path):
@@ -169,4 +175,4 @@ class TTSEngine:
 
     @staticmethod
     def available_voices() -> list[str]:
-        return list(EDGE_VOICES.keys())
+        return list(_edge_voices().keys())

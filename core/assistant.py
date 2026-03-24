@@ -3,6 +3,7 @@ import threading
 import time as _time
 
 from config import Config
+from core.i18n import t, t_set, t_list
 from core.signal import Signal
 from core.voice.hotkey import HotkeyManager
 from core.voice.listener import ListenWorker
@@ -48,6 +49,9 @@ class Assistant:
     result_ready = Signal()   # command, result
     notify = Signal()         # notification message
     detail = Signal()         # detailed status message
+    countdown = Signal()      # remaining seconds (int), -1 = hide
+    pick_request = Signal()   # results_with_meta, suggested_index
+    pick_done = Signal()      # chiudi overlay
 
     def __init__(self, config: Config):
         self.config = config
@@ -56,6 +60,9 @@ class Assistant:
         self._busy = False
         self._processing = False
         self._last_command_log: list[str] = []
+        self._pick_event = threading.Event()
+        self._pick_choice: int = -1
+        self._last_action_ctx: dict = {}
 
         # Memoria conversazionale globale
         self._memory = ConversationMemory(
@@ -121,23 +128,17 @@ class Assistant:
     def _check_dictation(text: str):
         """Controlla se il testo è un comando di dettatura. Ritorna (is_dictation, initial_text)."""
         lower = text.lower().strip().rstrip(".")
-        dictation_keywords = ("dettatura", "dittatura", "dettaura", "detta tura")
-        for kw in dictation_keywords:
+        for kw in t_set("dictation_keywords"):
             if kw in lower:
                 return True, ""
-        if lower in ("inizia a dettare", "scrivi quello che dico", "dettami"):
+        if lower in t_set("dictation_phrases"):
             return True, ""
-        type_in_prefixes = ("scrivi su ", "scrivi nel ", "scrivi sul ", "scrivi in ", "scrivi nella ",
-                            "scrivi a ", "scrivi al ")
-        if any(lower.startswith(p) for p in type_in_prefixes):
+        if any(lower.startswith(p) for p in t_list("dictation_prefixes")):
             return False, ""
         for prefix in ("scrivi ", "scrivi, ", "scrivi. "):
             if lower.startswith(prefix):
                 return True, text[len(prefix):].strip()
         return False, ""
-
-    _STOP_WORDS = {"stop", "lily stop", "fermati", "basta", "zitto", "zitta", "taci"}
-    _RESTART_WORDS = {"riavviati", "lily riavviati", "restart", "riavvia lily", "riavvio"}
 
     def _check_stop(self, text: str) -> bool:
         """Controlla se è un comando di stop. Ferma TTS immediatamente."""
@@ -146,14 +147,14 @@ class Assistant:
         lower = re.sub(r'\s+', ' ', lower).strip()
         # Rimuovi "lily" dal prefisso per il matching
         clean = lower.removeprefix("lily ").strip()
-        if lower in self._STOP_WORDS or clean in self._STOP_WORDS:
+        if lower in t_set("stop_words") or clean in t_set("stop_words"):
             print("[Stop] Comando stop rilevato")
             self.tts.stop()
             self.result_ready.emit(text, "")
             return True
-        if lower in self._RESTART_WORDS or clean in self._RESTART_WORDS:
+        if lower in t_set("restart_words") or clean in t_set("restart_words"):
             print("[Restart] Comando riavvio rilevato")
-            self.result_ready.emit(text, "Mi riavvio...")
+            self.result_ready.emit(text, t("restarting"))
             self._request_restart()
             return True
         return False
@@ -209,12 +210,13 @@ class Assistant:
         is_dictation, initial_text = self._check_dictation(text)
         if is_dictation:
             print("[Dettatura] Rilevato comando dettatura (fast path)")
-            self.result_ready.emit(text, "Dettatura attivata.")
+            self.result_ready.emit(text, t("dictation_activated"))
             play_beep()
             try:
                 run_dictation(
                     self._whisper_model, self.config,
                     self.state_changed, self.result_ready, play_beep,
+                    countdown=self.countdown,
                     initial_text=initial_text,
                 )
             finally:
@@ -247,7 +249,7 @@ class Assistant:
                 self.detail.emit("Decomposizione comandi...")
                 steps = decompose_chain(text, self.config)
                 if not steps:
-                    self.result_ready.emit(text, "Non sono riuscita a scomporre i comandi.")
+                    self.result_ready.emit(text, t("chain_decompose_fail"))
                     return
 
                 print(f"[Chain] {len(steps)} passaggi")
@@ -259,7 +261,7 @@ class Assistant:
                     if step_intent == "wait":
                         secs = float(step.get("parameter", "1"))
                         print(f"[Chain] Attesa {secs}s...")
-                        self.detail.emit(f"Attesa {secs}s...")
+                        self.detail.emit(t("chain_wait", secs=secs))
                         _time.sleep(secs)
                         continue
 
@@ -267,14 +269,14 @@ class Assistant:
                     self.detail.emit(f"Passo {i + 1}/{len(steps)}: {step_intent}")
                     print(f"[Chain] Passo {i + 1}: {step}")
 
-                    result = execute_action(step, self.config, memory=self._memory)
+                    result = execute_action(step, self.config, memory=self._memory, pick_callback=self.request_user_pick)
                     results.append(result)
                     print(f"[Chain] → {result}")
 
                 final = ". ".join(results)
                 self.detail.emit("")
                 self.result_ready.emit(text, final)
-                self.tts.speak("Fatto, ho eseguito tutti i comandi.")
+                self.tts.speak(t("chain_done"))
                 self._memory.add_user(text)
                 self._memory.add_assistant(final)
                 return
@@ -282,11 +284,12 @@ class Assistant:
             # Dettatura classificata dall'LLM (fallback)
             if intent_type == "dictation":
                 initial_text = intent.get("query", "").strip()
-                self.result_ready.emit(text, "Dettatura attivata.")
+                self.result_ready.emit(text, t("dictation_activated"))
                 play_beep()
                 run_dictation(
                     self._whisper_model, self.config,
                     self.state_changed, self.result_ready, play_beep,
+                    countdown=self.countdown,
                     initial_text=initial_text,
                 )
                 return
@@ -294,12 +297,13 @@ class Assistant:
             # Dettatura mirata su finestra
             if intent_type == "type_in" and intent.get("parameter", "").strip().lower() == "dictate":
                 target_window = intent.get("query", "")
-                self.result_ready.emit(text, f"Parla, invio su {target_window} quando hai finito.")
+                self.result_ready.emit(text, t("dictation_speak_prompt", target=target_window))
                 play_beep()
                 run_dictation_to_window(
                     self._whisper_model, self.config,
                     self.state_changed, self.result_ready, play_beep,
                     self.tts, intent,
+                    countdown=self.countdown,
                 )
                 return
 
@@ -320,7 +324,7 @@ class Assistant:
                     self._whisper_model, self.config, self.state_changed,
                 )
                 if not confirmed:
-                    cancel_msg = "Azione annullata."
+                    cancel_msg = t("action_cancelled")
                     print(f"[Sicurezza] {cancel_msg}")
                     self.result_ready.emit(text, cancel_msg)
                     self.tts.speak(cancel_msg)
@@ -329,7 +333,7 @@ class Assistant:
                 print("[Sicurezza] Confermato!")
 
             self.detail.emit(f"Esecuzione {intent_type}...")
-            result = execute_action(intent, self.config, memory=self._memory)
+            result = execute_action(intent, self.config, memory=self._memory, pick_callback=self.request_user_pick, last_action_ctx=self._last_action_ctx)
             self.detail.emit("")
             print(f"[Azione] {result}")
             self.result_ready.emit(text, result)
@@ -342,19 +346,28 @@ class Assistant:
             self.tts.speak(result)
 
             self._memory.add_user(text)
-            self._memory.add_assistant(result)
+            # Arricchisci la memoria con dettagli azione (path, ecc.)
+            from core.actions.base import get_action_context
+            ctx = get_action_context()
+            if ctx:
+                self._last_action_ctx = ctx
+                memory_text = f"{result} [action: {ctx}]"
+            else:
+                memory_text = result
+            self._memory.add_assistant(memory_text)
         except Exception as e:
             print(f"[Errore] {e}")
-            self.result_ready.emit(text, f"Errore: {e}")
+            self.result_ready.emit(text, t("error_generic", e=e))
         finally:
             self._processing = False
             self._busy = False
+            self.state_changed.emit("idle")
 
     def _handle_copy_log(self, text: str):
         """Copia l'ultimo log del comando nella clipboard."""
         try:
             if not self._last_command_log:
-                msg = "Non c'è nessun log da copiare."
+                msg = t("copy_log_empty")
                 self.result_ready.emit(text, msg)
                 self.tts.speak(msg)
                 return
@@ -362,13 +375,14 @@ class Assistant:
             log_text = "\n".join(self._last_command_log)
             copy_to_clipboard(log_text)
             n_lines = len(self._last_command_log)
-            msg = f"Log copiato nella clipboard, {n_lines} righe."
+            msg = t("copy_log_done", count=n_lines)
             print(f"[CopyLog] Copiato {n_lines} righe nella clipboard")
             self.result_ready.emit(text, msg)
             self.tts.speak(msg)
         finally:
             self._processing = False
             self._busy = False
+            self.state_changed.emit("idle")
 
     def _on_worker_finished(self):
         print(f"[Worker] Finito. processing={self._processing}")
@@ -396,16 +410,16 @@ class Assistant:
 
             # Intent che non hanno senso da chat testuale
             if intent_type in ("dictation",):
-                return "La dettatura funziona solo via voce."
+                return t("dictation_voice_only")
 
             if intent_type == "type_in" and intent.get("parameter", "").strip().lower() == "dictate":
-                return "La dettatura su finestra funziona solo via voce."
+                return t("dictation_window_voice_only")
 
             # Catena di comandi
             if intent_type == "chain":
                 steps = decompose_chain(text, self.config)
                 if not steps:
-                    return "Non sono riuscita a scomporre i comandi."
+                    return t("chain_decompose_fail")
 
                 results = []
                 for i, step in enumerate(steps):
@@ -415,7 +429,7 @@ class Assistant:
                         _time.sleep(secs)
                         continue
                     step["_original_text"] = text
-                    result = execute_action(step, self.config, memory=self._memory)
+                    result = execute_action(step, self.config, memory=self._memory, pick_callback=self.request_user_pick)
                     results.append(result)
 
                 final = ". ".join(results)
@@ -426,14 +440,14 @@ class Assistant:
             # Copia log
             if intent_type == "copy_log":
                 if not self._last_command_log:
-                    return "Non c'è nessun log da copiare."
+                    return t("copy_log_empty")
                 from core.utils.clipboard import copy_to_clipboard
                 log_text = "\n".join(self._last_command_log)
                 copy_to_clipboard(log_text)
-                return f"Log copiato nella clipboard, {len(self._last_command_log)} righe."
+                return t("copy_log_done", count=len(self._last_command_log))
 
             # Esecuzione azione (include chat, open_program, ecc.)
-            result = execute_action(intent, self.config, memory=self._memory)
+            result = execute_action(intent, self.config, memory=self._memory, pick_callback=self.request_user_pick, last_action_ctx=self._last_action_ctx)
             print(f"[Chat] Risultato: {result}")
 
             # Aggiorna TTS se self_config
@@ -442,12 +456,170 @@ class Assistant:
                 self.tts.voice = self.config.tts_voice
 
             self._memory.add_user(text)
-            self._memory.add_assistant(result)
+            from core.actions.base import get_action_context
+            ctx = get_action_context()
+            if ctx:
+                self._memory.add_assistant(f"{result} [action: {ctx}]")
+            else:
+                self._memory.add_assistant(result)
             return result
 
         except Exception as e:
             print(f"[Chat] Errore: {e}")
-            return f"Errore: {e}"
+            return t("error_generic", e=e)
+
+    def request_user_pick(self, results: list[str], suggested: int = 0) -> int:
+        """Mostra l'overlay con i risultati e aspetta la scelta dell'utente.
+        Ritorna l'indice scelto o -1 se annullato/timeout."""
+        from core.search import get_path_metadata
+        results_with_meta = [(r, get_path_metadata(r)) for r in results]
+
+        self._pick_event.clear()
+        self._pick_choice = -1
+        self.detail.emit("Quale intendevi?")
+        self.tts.speak(t("pick_ask", count=len(results)))
+        self.pick_request.emit(results_with_meta, suggested)
+
+        # Ascolta voce in parallelo (si ferma quando pick_event è settato)
+        n_results = len(results)
+        threading.Thread(
+            target=self._listen_for_pick, args=(n_results,), daemon=True
+        ).start()
+
+        # Aspetta la scelta (max 30 secondi) — click o voce
+        picked = self._pick_event.wait(timeout=30)
+        self.detail.emit("")
+        self.pick_done.emit()  # Chiudi overlay
+
+        if not picked or self._pick_choice == -1:
+            self.tts.speak(t("pick_timeout"))
+            return -1
+
+        if self._pick_choice == -2:
+            self.tts.speak(t("pick_cancelled"))
+            return -2
+
+        return self._pick_choice
+
+    def _listen_for_pick(self, n_results: int):
+        """Ascolta la voce dell'utente per scegliere un risultato tramite ordinale."""
+        from core.utils.audio import record_until_silence, SAMPLE_RATE
+        from core.voice.transcriber import transcribe
+
+        try:
+            # Aspetta che il TTS finisca prima di ascoltare
+            print("[Pick] Aspetto fine TTS...")
+            self.tts._done_event.wait(timeout=10)
+            _time.sleep(0.5)
+
+            if self._pick_event.is_set():
+                return
+
+            print("[Pick] Inizio ascolto vocale...")
+            self.state_changed.emit("listening")
+            play_beep()  # Beep per segnalare che sta ascoltando
+            device = self.config.mic_device if self.config.mic_device is not None else None
+            audio = record_until_silence(
+                device=device, timeout=20,
+                silence_duration=1.5,
+                speech_threshold=0.008,
+            )
+
+            if self._pick_event.is_set():
+                return
+
+            if audio is None:
+                print("[Pick] Nessun audio rilevato")
+                self.state_changed.emit("idle")
+                return
+
+            duration = len(audio) / SAMPLE_RATE
+            print(f"[Pick] Audio ricevuto: {duration:.1f}s")
+
+            if duration < 0.3:
+                print("[Pick] Audio troppo corto")
+                self.state_changed.emit("idle")
+                return
+
+            self.state_changed.emit("transcribing")
+            response = transcribe(self._whisper_model, audio, self.config.whisper_model)
+            print(f"[Pick] Trascrizione: '{response}'")
+
+            if self._pick_event.is_set():
+                return
+
+            if not response or not response.strip():
+                print("[Pick] Trascrizione vuota")
+                self.state_changed.emit("idle")
+                return
+
+            idx = self._parse_ordinal(response, n_results)
+            if idx == -2:
+                print(f"[Pick] Annullato via voce: '{response}'")
+                self._pick_choice = -2
+                self._pick_event.set()
+            elif idx is not None:
+                print(f"[Pick] Scelto via voce: indice {idx}")
+                self._pick_choice = idx
+                self._pick_event.set()
+            else:
+                print(f"[Pick] Non ho capito la scelta da: '{response}'")
+                self.tts.speak(t("pick_not_understood"))
+        except Exception as e:
+            print(f"[Pick] Errore ascolto: {e}")
+        finally:
+            self.state_changed.emit("idle")
+
+    @staticmethod
+    def _parse_ordinal(text: str, max_n: int) -> int | None:
+        """Parsa ordinali italiani/inglesi e numeri dal testo. Ritorna indice 0-based o None."""
+        import re
+        text = text.lower().strip().rstrip(".")
+
+        # Annullamento — controllare PRIMA dei cardinali ("nessuno" contiene "uno")
+        cancel_words = {"annulla", "nessuno", "niente", "cancel", "none", "skip", "lascia", "no"}
+        if any(re.search(rf'\b{w}\b', text) for w in cancel_words):
+            return -2
+
+        # Ordinali italiani/inglesi
+        ordinals = {
+            "primo": 1, "prima": 1, "secondo": 2, "seconda": 2,
+            "terzo": 3, "terza": 3, "quarto": 4, "quarta": 4,
+            "quinto": 5, "quinta": 5, "sesto": 6, "sesta": 6,
+            "settimo": 7, "settima": 7, "ottavo": 8, "ottava": 8,
+            "nono": 9, "nona": 9, "decimo": 10, "decima": 10,
+            "first": 1, "second": 2, "third": 3, "fourth": 4,
+            "fifth": 5, "sixth": 6, "seventh": 7, "eighth": 8,
+            "ninth": 9, "tenth": 10,
+        }
+        for word, num in ordinals.items():
+            if re.search(rf'\b{word}\b', text) and num <= max_n:
+                return num - 1
+
+        # Cardinali italiani/inglesi
+        cardinals = {
+            "uno": 1, "due": 2, "tre": 3, "quattro": 4, "cinque": 5,
+            "sei": 6, "sette": 7, "otto": 8, "nove": 9, "dieci": 10,
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        }
+        for word, num in cardinals.items():
+            if re.search(rf'\b{word}\b', text) and num <= max_n:
+                return num - 1
+
+        # Numero diretto: "3", "il 5"
+        match = re.search(r'\b(\d+)\b', text)
+        if match:
+            num = int(match.group(1))
+            if 1 <= num <= max_n:
+                return num - 1
+
+        return None
+
+    def on_pick_choice(self, index: int):
+        """Callback dalla UI quando l'utente sceglie un risultato."""
+        self._pick_choice = index
+        self._pick_event.set()
 
     def apply_config(self):
         """Applica le modifiche alla configurazione. Chiamato da SettingsPage dopo save."""

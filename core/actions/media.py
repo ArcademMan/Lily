@@ -2,6 +2,7 @@
 
 import ctypes
 from core.actions.base import Action
+from core.i18n import t
 
 # Virtual key codes per i tasti multimediali di Windows
 VK_MEDIA_PLAY_PAUSE = 0xB3
@@ -20,23 +21,23 @@ def _press_media_key(vk_code: int):
 
 
 class MediaAction(Action):
-    def execute(self, intent: dict, config) -> str:
+    def execute(self, intent: dict, config, **kwargs) -> str:
         parameter = intent.get("parameter", "").strip().lower()
 
         if parameter in ("play", "pause", "play_pause"):
             _press_media_key(VK_MEDIA_PLAY_PAUSE)
-            return "Play o pausa."
+            return t("media_play_pause")
 
         elif parameter in ("next", "skip", "avanti"):
             _press_media_key(VK_MEDIA_NEXT_TRACK)
-            return "Traccia successiva."
+            return t("media_next")
 
         elif parameter in ("previous", "prev", "indietro"):
             _press_media_key(VK_MEDIA_PREV_TRACK)
-            return "Traccia precedente."
+            return t("media_previous")
 
         elif parameter == "stop":
             _press_media_key(VK_MEDIA_STOP)
-            return "Riproduzione fermata."
+            return t("media_stop")
 
-        return "Comando multimediale non riconosciuto."
+        return t("media_unknown")
