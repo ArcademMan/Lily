@@ -1,5 +1,9 @@
 # Lily - Assistente Vocale
 
+## Regole generali
+
+- Ogni volta che finisci un messaggio o una task, scrivi `LILY_DONE` alla fine.
+
 ## TODO — Bug e criticita
 
 ### Sicurezza

@@ -18,6 +18,8 @@ from core.actions.system_info import SystemInfoAction
 from core.actions.memory_action import MemoryAction
 from core.actions.run_command import RunCommandAction
 from core.actions.terminal_read import TerminalReadAction
+from core.actions.terminal_write import TerminalWriteAction
+from core.actions.terminal_watch import TerminalWatchAction
 
 _ACTIONS = {
     "open_folder": OpenFolderAction(),
@@ -40,6 +42,8 @@ _ACTIONS = {
     "save_memory": MemoryAction(),
     "run_command": RunCommandAction(),
     "terminal_read": TerminalReadAction(),
+    "terminal_write": TerminalWriteAction(),
+    "terminal_watch": TerminalWatchAction(),
 }
 
 

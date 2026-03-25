@@ -51,7 +51,8 @@ _SAFE_PATTERNS = [
     r"^\$\w+\s*=\s*\[",            # $x = [Environment]::GetFolderPath(...)
     r"^get-\w+",                     # Get-Process, Get-ChildItem, ecc.
     r"^\[[\w.]+\]::\w+",            # [System.Environment]::GetEnvironmentVariable
-    r"^python\s+-c\s+['\"]",        # python -c "print(...)"  (read-only scripts)
+    r"^python\d?\s+-c\s+['\"]",     # python -c "print(...)"  (read-only scripts)
+    r"^pip\s+(list|show|freeze)",    # pip list, pip show, pip freeze
 ]
 
 # ── Blacklist: comandi SEMPRE bloccati anche con conferma ───────────────────
@@ -91,13 +92,44 @@ def _unwrap_powershell(cmd: str) -> str:
     return cmd
 
 
+def _has_unquoted_separator(cmd: str) -> bool:
+    """Controlla se ci sono ; && || fuori da quotes."""
+    in_single = False
+    in_double = False
+    i = 0
+    while i < len(cmd):
+        c = cmd[i]
+        if c == '\\' and i + 1 < len(cmd):
+            i += 2
+            continue
+        if c == "'" and not in_double:
+            in_single = not in_single
+        elif c == '"' and not in_single:
+            in_double = not in_double
+        elif not in_single and not in_double:
+            if c == ';':
+                return True
+            if c == '&' and i + 1 < len(cmd) and cmd[i + 1] == '&':
+                return True
+            if c == '|' and i + 1 < len(cmd) and cmd[i + 1] == '|':
+                return True
+        i += 1
+    return False
+
+
 def _is_safe_command(cmd: str) -> bool:
     """Controlla se il comando e' read-only e puo' essere eseguito senza conferma."""
     # Unwrap: l'LLM spesso wrappa in powershell -Command "..."
     inner = _unwrap_powershell(cmd)
     cmd_lower = inner.strip().lower()
 
-    # PRIMA splitta su separatori — ogni segmento deve essere safe indipendentemente
+    # Comandi che wrappano contenuto in quotes (python -c "...;...", pip show "x")
+    # non vanno splittati sui ; interni. Controlla se il pattern safe matcha E
+    # i separatori sono solo dentro quotes.
+    if _is_safe_single(cmd_lower) and not _has_unquoted_separator(cmd_lower):
+        return True
+
+    # Splitta su separatori — ogni segmento deve essere safe indipendentemente
     if re.search(r'[;]|&&|\|\|', cmd_lower):
         segments = re.split(r'\s*(?:;|&&|\|\|)\s*', cmd_lower)
         segments = [s.strip() for s in segments if s.strip()]

@@ -51,7 +51,13 @@ class AnthropicProvider(LLMProvider):
             "messages": user_messages,
         }
         if system_text:
-            payload["system"] = system_text
+            payload["system"] = [
+                {
+                    "type": "text",
+                    "text": system_text,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
 
         def _do_request():
             resp = requests.post(ANTHROPIC_API_URL, headers=headers, json=payload, timeout=timeout)

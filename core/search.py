@@ -250,14 +250,20 @@ def get_path_metadata(path: str) -> str:
 
         if p.is_dir():
             files = []
+            dirs = []
             try:
                 entries = list(p.iterdir())
                 files = [e for e in entries if e.is_file()]
+                dirs = [e for e in entries if e.is_dir()]
             except PermissionError:
                 return "[access denied]"
 
-            if not files:
+            if not files and not dirs:
                 return "[empty]"
+
+            if not files:
+                dir_names = ", ".join(d.name for d in dirs[:5])
+                return f"[{len(dirs)} subdirs: {dir_names}]"
 
             # Conta per estensione
             ext_count = {}

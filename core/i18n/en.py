@@ -492,6 +492,8 @@ STRINGS = {
     "screenshot_no_screen": "No screen found.",
     "screenshot_saved": "Screenshot saved in {path}",
     "screenshot_error": "Screenshot error: {e}",
+    "screenshot_window_not_found": "Window '{query}' not found.",
+    "screenshot_capture_error": "Failed to capture window '{query}'.",
 
     # ── Action responses: type_action ────────────────────────────────────
     "type_no_window": "You didn't specify which window to go to.",
@@ -522,7 +524,17 @@ STRINGS = {
     "screen_read_llm_error": "I read the text but can't formulate a response.",
 
     # ── Action responses: terminal_read ───────────────────────────────
+    "terminal_watch_no_tab": "No terminal tab available.",
+    "terminal_watch_started": "Monitoring active on {tab}. I'll notify you when it asks for confirmation or finishes.",
+    "terminal_watch_stopped": "Monitoring stopped on {tab}.",
+    "watcher_confirm": "{tab} is asking for confirmation.",
+    "watcher_done": "{tab} has finished.",
+    "watcher_error": "{tab} has an error.",
+    "terminal_write_empty": "No text to write to the terminal.",
+    "terminal_write_no_session": "No active terminal session.",
+    "terminal_write_ok": "Written to terminal {tab}.",
     "terminal_read_empty": "The terminal is empty, there's no output to read.",
+    "terminal_read_empty_with_tabs": "This tab is empty. Available tabs: {tabs}.",
     "terminal_read_llm_error": "I read the terminal output but can't formulate a response.",
 
     # ── Action responses: timer ──────────────────────────────────────────
@@ -703,6 +715,7 @@ STRINGS = {
     "settings_dictation_max": "Max dictation duration (s)",
     "settings_dictation_timeout": "Inactivity timeout (s)",
     "settings_advanced": "Advanced",
+    "settings_log_enabled": "Show log page",
     "settings_terminal_enabled": "Enable integrated terminal",
     "settings_save": "Save",
     "settings_saved": "Saved!",

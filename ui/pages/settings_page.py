@@ -49,6 +49,7 @@ def _section_title(text: str) -> QLabel:
 class SettingsPage(QWidget):
     dirty_changed = QtSignal(bool)
     terminal_toggled = QtSignal(bool)
+    log_toggled = QtSignal(bool)
 
     def __init__(self, config, assistant, parent=None):
         super().__init__(parent)
@@ -215,6 +216,11 @@ class SettingsPage(QWidget):
         adv_card = GlassCard()
         ac = adv_card.body()
 
+        self._log_enabled = QCheckBox(t("settings_log_enabled"))
+        self._log_enabled.setChecked(getattr(config, "log_enabled", False))
+        self._log_enabled.toggled.connect(self._check_dirty)
+        ac.addWidget(self._log_enabled)
+
         self._terminal_enabled = QCheckBox(t("settings_terminal_enabled"))
         self._terminal_enabled.setChecked(getattr(config, "terminal_enabled", False))
         self._terminal_enabled.toggled.connect(self._check_dirty)
@@ -269,6 +275,7 @@ class SettingsPage(QWidget):
             self._dict_silence.value(),
             self._dict_max.value(),
             self._dict_timeout.value(),
+            self._log_enabled.isChecked(),
             self._terminal_enabled.isChecked(),
         )
 
@@ -320,9 +327,11 @@ class SettingsPage(QWidget):
         self._config.dictation_silence_duration = self._dict_silence.value() / 10.0
         self._config.dictation_max_duration = self._dict_max.value()
         self._config.dictation_silence_timeout = self._dict_timeout.value()
+        self._config.log_enabled = self._log_enabled.isChecked()
         self._config.terminal_enabled = self._terminal_enabled.isChecked()
         self._config.save()
 
+        self.log_toggled.emit(self._log_enabled.isChecked())
         self.terminal_toggled.emit(self._terminal_enabled.isChecked())
 
         self._assistant.apply_config()

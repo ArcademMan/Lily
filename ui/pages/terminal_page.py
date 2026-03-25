@@ -101,8 +101,12 @@ function initTerminal() {
         if (bridge) bridge.on_resize(size.cols, size.rows);
     });
 
+    let _resizeTimer = null;
     new ResizeObserver(function() {
-        if (fitAddon) fitAddon.fit();
+        if (_resizeTimer) clearTimeout(_resizeTimer);
+        _resizeTimer = setTimeout(function() {
+            if (fitAddon) fitAddon.fit();
+        }, 150);
     }).observe(document.getElementById('terminal'));
 }
 
@@ -145,8 +149,9 @@ class PtyBridge(QObject):
     output_ready = Signal(str)
     clear_requested = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, tab_id: str, parent=None):
         super().__init__(parent)
+        self._tab_id = tab_id
         self._pty: PtyProcess | None = None
         self._reader_thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -167,8 +172,14 @@ class PtyBridge(QObject):
             self.output_ready.emit(f"\r\nErrore avvio shell: {e}\r\n")
             return
 
+        terminal_buffer.register_writer(self._tab_id, self._write_to_pty)
         self._reader_thread = threading.Thread(target=self._read_loop, daemon=True)
         self._reader_thread.start()
+
+    def _write_to_pty(self, data: str):
+        """Scrive dati nel PTY. Usato dal terminal_buffer.write()."""
+        if self._pty and self._pty.isalive():
+            self._pty.write(data)
 
     def stop_pty(self):
         self._stop.set()
@@ -191,7 +202,7 @@ class PtyBridge(QObject):
                     break
                 data = self._pty.read(4096)
                 if data:
-                    terminal_buffer.append(data)
+                    terminal_buffer.append(data, tab_id=self._tab_id)
                     self.output_ready.emit(data)
             except EOFError:
                 break
@@ -231,10 +242,11 @@ class TerminalSession(QWidget):
 
     closed = Signal(object)  # emits self
 
-    def __init__(self, cwd: str, parent=None):
+    def __init__(self, tab_id: str, cwd: str, parent=None):
         super().__init__(parent)
+        self._tab_id = tab_id
         self._cwd = cwd
-        self._bridge = PtyBridge(self)
+        self._bridge = PtyBridge(tab_id, self)
         self._loaded = False
 
         layout = QVBoxLayout(self)
@@ -280,8 +292,13 @@ class TerminalSession(QWidget):
     def is_alive(self) -> bool:
         return self._bridge.is_alive()
 
+    @property
+    def tab_id(self) -> str:
+        return self._tab_id
+
     def cleanup(self):
         self._bridge.stop_pty()
+        terminal_buffer.remove_tab(self._tab_id)
 
 
 # ── Tab button ───────────────────────────────────────────────────
@@ -461,9 +478,11 @@ class TerminalPage(QWidget):
 
     def _add_tab(self):
         self._counter += 1
+        tab_id = f"tab_{self._counter}"
         label = f"PS {self._counter}"
 
-        session = TerminalSession(self._cwd, self)
+        session = TerminalSession(tab_id, self._cwd, self)
+        terminal_buffer.set_label(tab_id, label)
         self._sessions.append(session)
         self._stack.addWidget(session)
 
@@ -478,6 +497,7 @@ class TerminalPage(QWidget):
 
     def _switch_to(self, session: TerminalSession):
         self._stack.setCurrentWidget(session)
+        terminal_buffer.set_active(session.tab_id)
         for i, s in enumerate(self._sessions):
             self._tab_buttons[i].set_active(s is session)
 

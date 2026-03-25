@@ -128,6 +128,10 @@ class MainWindow(QMainWindow):
         self._llm_page.dirty_changed.connect(lambda d: self._sidebar.set_page_dirty(2, d))
         self._settings_page.dirty_changed.connect(lambda d: self._sidebar.set_page_dirty(3, d))
 
+        # Log visibility from settings
+        self._settings_page.log_toggled.connect(self._sidebar.set_log_visible)
+        self._sidebar.set_log_visible(getattr(self.config, "log_enabled", False))
+
         # Terminal visibility from settings
         self._settings_page.terminal_toggled.connect(self._sidebar.set_terminal_visible)
         self._sidebar.set_terminal_visible(getattr(self.config, "terminal_enabled", False))

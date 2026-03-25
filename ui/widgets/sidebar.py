@@ -16,8 +16,10 @@ def _get_pages():
         ("mdi6.brain",            t("sidebar_llm")),
         ("mdi6.cog-outline",      t("sidebar_settings")),
         ("mdi6.chart-bar",        t("sidebar_usage")),
-        ("mdi6.text-box-outline", t("sidebar_log")),
     ]
+
+
+_LOG_ICON = "mdi6.text-box-outline"
 
 
 _TERMINAL_ICON = "mdi6.console"
@@ -135,6 +137,12 @@ class Sidebar(QWidget):
             layout.addWidget(btn)
             self._buttons.append(btn)
 
+        # ── Log button (hidden by default) ────────────────────────
+        self._log_btn = SidebarButton(_LOG_ICON, t("sidebar_log"), self)
+        self._log_btn.clicked.connect(lambda checked: self._on_click(5))
+        self._log_btn.setVisible(False)
+        layout.addWidget(self._log_btn)
+
         # ── Terminal button (hidden by default) ──────────────────
         self._terminal_btn = SidebarButton(_TERMINAL_ICON, t("sidebar_terminal"), self)
         self._terminal_btn.clicked.connect(lambda checked: self._on_click(6))
@@ -151,7 +159,11 @@ class Sidebar(QWidget):
     def set_active(self, index: int):
         for i, btn in enumerate(self._buttons):
             btn.set_active(i == index - 1)
+        self._log_btn.set_active(index == 5)
         self._terminal_btn.set_active(index == 6)
+
+    def set_log_visible(self, visible: bool):
+        self._log_btn.setVisible(visible)
 
     def set_terminal_visible(self, visible: bool):
         self._terminal_btn.setVisible(visible)

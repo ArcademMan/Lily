@@ -56,12 +56,7 @@ class WindowAction(Action):
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Nome del programma (per snap/move/minimize/restore/nudge)"},
-                "parameter": {"type": "string", "enum": [
-                    "close_explorer", "minimize_all", "show_desktop",
-                    "snap_left", "snap_right", "move_monitor",
-                    "restore", "minimize", "close_all",
-                    "nudge_up", "nudge_down", "nudge_left", "nudge_right"
-                ]}
+                "parameter": {"type": "string", "description": "close_explorer/minimize_all/show_desktop/snap_left/snap_right/move_monitor/restore/minimize/close_all/nudge_DIRECTION_PIXELS (es. nudge_left_175, nudge_up_200, default 50px)"}
             },
             "required": ["parameter"]
         }

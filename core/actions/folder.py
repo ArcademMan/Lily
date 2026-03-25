@@ -23,7 +23,7 @@ class OpenFolderAction(Action):
 
     def execute(self, intent: dict, config, pick_callback=None, **kwargs) -> str:
         # Direct path: if parameter contains a valid folder path, open it directly
-        direct_path = intent.get("parameter", "").strip()
+        direct_path = os.path.expandvars(intent.get("parameter", "").strip())
         if direct_path and os.path.isdir(direct_path):
             os.startfile(direct_path)
             return t("folder_opened_direct", name=os.path.basename(direct_path))
@@ -109,5 +109,13 @@ class OpenFolderAction(Action):
                     if r not in seen:
                         all_results.append(r)
                         seen.add(r)
+
+        # Rank: risultati il cui path contiene piu search terms vanno in cima
+        if len(search_terms) > 1 and all_results:
+            terms_lower = [t.lower() for t in search_terms]
+            all_results.sort(
+                key=lambda r: sum(1 for t in terms_lower if t in r.lower()),
+                reverse=True,
+            )
 
         return all_results

@@ -51,6 +51,7 @@ LILY_DEFAULTS = {
     "agent_enabled": False,
     "agent_max_iterations": 6,
     "terminal_enabled": False,
+    "log_enabled": False,
 }
 
 ALL_DEFAULTS = {**USER_DEFAULTS, **LILY_DEFAULTS}

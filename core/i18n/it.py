@@ -500,6 +500,8 @@ STRINGS = {
     "screenshot_no_screen": "Nessuno schermo trovato.",
     "screenshot_saved": "Screenshot salvato in {path}",
     "screenshot_error": "Errore screenshot: {e}",
+    "screenshot_window_not_found": "Finestra '{query}' non trovata.",
+    "screenshot_capture_error": "Errore nella cattura della finestra '{query}'.",
 
     # ── Action responses: type_action ────────────────────────────────────
     "type_no_window": "Non hai specificato su quale finestra andare.",
@@ -530,7 +532,17 @@ STRINGS = {
     "screen_read_llm_error": "Ho letto il testo ma non riesco a rispondere.",
 
     # ── Action responses: terminal_read ───────────────────────────────
+    "terminal_watch_no_tab": "Nessun tab terminale disponibile.",
+    "terminal_watch_started": "Monitoring attivato su {tab}. Ti avviso se chiede conferma o finisce.",
+    "terminal_watch_stopped": "Monitoring disattivato su {tab}.",
+    "watcher_confirm": "{tab} chiede conferma.",
+    "watcher_done": "{tab} ha finito.",
+    "watcher_error": "{tab} ha un errore.",
+    "terminal_write_empty": "Nessun testo da scrivere nel terminale.",
+    "terminal_write_no_session": "Nessuna sessione terminale attiva.",
+    "terminal_write_ok": "Scritto nel terminale {tab}.",
     "terminal_read_empty": "Il terminale è vuoto, non c'è nessun output da leggere.",
+    "terminal_read_empty_with_tabs": "Questo tab è vuoto. Tab disponibili: {tabs}.",
     "terminal_read_llm_error": "Ho letto l'output del terminale ma non riesco a formulare una risposta.",
 
     # ── Action responses: timer ──────────────────────────────────────────
@@ -711,6 +723,7 @@ STRINGS = {
     "settings_dictation_max": "Durata max dettatura (s)",
     "settings_dictation_timeout": "Timeout inattività (s)",
     "settings_advanced": "Avanzate",
+    "settings_log_enabled": "Mostra pagina log",
     "settings_terminal_enabled": "Abilita terminale integrato",
     "settings_save": "Salva",
     "settings_saved": "Salvato!",

@@ -198,9 +198,9 @@ def pick_best_result(user_query: str, results: list[str], config,
         if not is_cloud:
             return path
         parts = path.replace("\\", "/").split("/")
-        if len(parts) <= 4:
+        if len(parts) <= 5:
             return "/".join(parts)
-        return parts[0] + "/.../" + "/".join(parts[-3:])
+        return "/".join(parts[:2]) + "/.../" + "/".join(parts[-3:])
 
     # Arricchisci risultati con metadata
     lines = []
@@ -212,6 +212,9 @@ def pick_best_result(user_query: str, results: list[str], config,
         lines.append(line)
 
     numbered = "\n".join(lines)
+    print(f"[Pick] query={intent_query!r} type={intent_type} risultati={len(capped)}:")
+    for line in lines:
+        print(f"  {line}")
     prompt = pick_template.format(
         user_query=user_query, results=numbered,
         intent_type=intent_type or "unknown",

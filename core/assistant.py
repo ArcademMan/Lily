@@ -78,6 +78,22 @@ class Assistant:
         timer_notifier.speak.connect(lambda msg: self.tts.speak(msg))
         timer_notifier.notify.connect(lambda msg: self.notify.emit(msg))
 
+        # Collega terminal watcher al TTS e notifiche
+        from core.terminal_watcher import TerminalWatcher
+        watcher = TerminalWatcher.instance()
+        watcher.on_confirm.connect(lambda tab, line: (
+            self.tts.speak(t("watcher_confirm", tab=tab)),
+            self.notify.emit(f"[{tab}] {line}"),
+        ))
+        watcher.on_done.connect(lambda tab: (
+            self.tts.speak(t("watcher_done", tab=tab)),
+            self.notify.emit(t("watcher_done", tab=tab)),
+        ))
+        watcher.on_error.connect(lambda tab, line: (
+            self.tts.speak(t("watcher_error", tab=tab)),
+            self.notify.emit(f"[{tab}] {line}"),
+        ))
+
         # Hotkey
         self._hotkey = HotkeyManager()
         self._hotkey.pressed.connect(self._start_listening)
