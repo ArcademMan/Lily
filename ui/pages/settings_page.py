@@ -234,7 +234,7 @@ class SettingsPage(QWidget):
         dc.addLayout(ds_row)
 
         dm_row, self._dict_max, self._dm_label = _slider_row(
-            t("settings_dictation_max"), 10, 120,
+            t("settings_dictation_max"), 10, 300,
             int(getattr(config, "dictation_max_duration", 60)),
             hint=t("ai_hint_dict_max"))
         dc.addLayout(dm_row)

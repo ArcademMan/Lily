@@ -2,6 +2,8 @@ import sys
 import threading
 import time as _time
 
+import keyboard
+
 from config import Config
 from core.i18n import t, t_set, t_list
 from core.signal import Signal
@@ -243,6 +245,16 @@ class Assistant:
         # Fast path: dettatura senza passare dall'LLM
         is_dictation, initial_text = self._check_dictation(text)
         if is_dictation:
+            if initial_text:
+                # "scrivi, blablabla" -> scrivi il testo e basta, no dettatura
+                print(f"[Dettatura] Fast write: {initial_text}")
+                keyboard.write(initial_text)
+                play_beep()
+                self.result_ready.emit("Scrivi", initial_text)
+                self._processing = False
+                self._busy = False
+                self.state_changed.emit("idle")
+                return
             print("[Dettatura] Rilevato comando dettatura (fast path)")
             self.result_ready.emit(text, t("dictation_activated"))
             play_beep()
@@ -251,7 +263,6 @@ class Assistant:
                     self._whisper_model, self.config,
                     self.state_changed, self.result_ready, play_beep,
                     countdown=self.countdown,
-                    initial_text=initial_text,
                 )
             finally:
                 self._processing = False
