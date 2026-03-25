@@ -503,7 +503,10 @@ class ChatPage(QWidget):
         self._add_bubble(response, is_user=False, tok_in=tok_in, tok_out=tok_out)
         self._update_tokens()
         self._update_context()
-        self._worker = None
+        if self._worker is not None:
+            self._worker.wait()
+            self._worker.deleteLater()
+            self._worker = None
 
     def _clear_chat(self):
         while self._messages_layout.count() > 1:

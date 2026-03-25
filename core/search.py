@@ -8,6 +8,7 @@ def check_everything(es_path: str) -> bool:
         result = subprocess.run(
             [es_path, "-get-everything-version"],
             capture_output=True, text=True, timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         return result.returncode == 0 and len(result.stdout.strip()) > 0
     except Exception:
@@ -35,7 +36,8 @@ def search_everything(es_path: str, query: str, extra_args: list[str] | None = N
     cmd.append(query)
     try:
         print(f"[Everything] Comando: {cmd}")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10,
+                                       creationflags=subprocess.CREATE_NO_WINDOW)
         if result.stderr.strip():
             print(f"[Everything] Stderr: {result.stderr[:200]}")
         lines = [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]

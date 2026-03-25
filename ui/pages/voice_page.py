@@ -211,6 +211,7 @@ class VoicePage(QWidget):
                     ["nvidia-smi", "--query-gpu=memory.used,memory.total,utilization.gpu,name",
                      "--format=csv,noheader,nounits"],
                     capture_output=True, text=True, timeout=3,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 parts = [p.strip() for p in r.stdout.strip().split(",")]
                 if len(parts) >= 4:
@@ -246,7 +247,8 @@ class VoicePage(QWidget):
             try:
                 tess = self._config.tesseract_path if self._config else "tesseract"
                 r = subprocess.run([tess, "--version"],
-                                   capture_output=True, text=True, timeout=3)
+                                   capture_output=True, text=True, timeout=3,
+                                   creationflags=subprocess.CREATE_NO_WINDOW)
                 status["tesseract"] = r.returncode == 0
             except Exception:
                 status["tesseract"] = False

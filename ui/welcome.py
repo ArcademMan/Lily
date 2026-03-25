@@ -185,7 +185,8 @@ class WelcomeWizard(QDialog):
         # Everything
         try:
             r = subprocess.run(["es.exe", "-get-everything-version"],
-                               capture_output=True, text=True, timeout=3)
+                               capture_output=True, text=True, timeout=3,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
             results["everything"] = r.returncode == 0 and bool(r.stdout.strip())
         except Exception:
             results["everything"] = False
@@ -193,14 +194,16 @@ class WelcomeWizard(QDialog):
         # Ollama
         try:
             r = subprocess.run(["ollama", "list"],
-                               capture_output=True, text=True, timeout=5)
+                               capture_output=True, text=True, timeout=5,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
             results["ollama"] = r.returncode == 0
         except Exception:
             results["ollama"] = False
 
         # CUDA (nvidia-smi)
         try:
-            r = subprocess.run(["nvidia-smi"], capture_output=True, text=True, timeout=3)
+            r = subprocess.run(["nvidia-smi"], capture_output=True, text=True, timeout=3,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
             results["cuda"] = r.returncode == 0
         except Exception:
             results["cuda"] = False
@@ -208,7 +211,8 @@ class WelcomeWizard(QDialog):
         # Tesseract
         try:
             r = subprocess.run(["tesseract", "--version"],
-                               capture_output=True, text=True, timeout=3)
+                               capture_output=True, text=True, timeout=3,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
             results["tesseract"] = r.returncode == 0
         except Exception:
             results["tesseract"] = False

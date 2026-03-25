@@ -77,6 +77,8 @@ hiddenimports = [
     'qtawesome',
     # Utils
     'psutil', 'json', 'threading', 'subprocess',
+    # i18n (dynamic imports)
+    'core.i18n.it', 'core.i18n.en',
     # OnnxRuntime (per piper/whisper)
     'onnxruntime',
 ]

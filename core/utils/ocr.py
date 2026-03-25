@@ -9,6 +9,7 @@ def ocr_image(image_path: str, tesseract_path: str, lang: str = "eng") -> str:
         result = subprocess.run(
             [tesseract_path, image_path, "stdout", "-l", lang, "--psm", "6"],
             capture_output=True, text=True, timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         text = result.stdout.strip()
         if result.stderr.strip():

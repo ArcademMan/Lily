@@ -160,7 +160,8 @@ class PtyBridge(QObject):
         self.stop_pty()
         self._stop.clear()
 
-        env = os.environ.copy()
+        from core.utils.env import clean_env
+        env = clean_env()
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
 
@@ -170,6 +171,13 @@ class PtyBridge(QObject):
             )
         except Exception as e:
             self.output_ready.emit(f"\r\nErrore avvio shell: {e}\r\n")
+            self.output_ready.emit(f"\r\nShell: {shell}\r\nPATH: {env.get('PATH', '?')[:300]}\r\n")
+            return
+
+        if not self._pty.isalive():
+            exitcode = getattr(self._pty, 'exitstatus', '?')
+            self.output_ready.emit(f"\r\n[Shell morta subito, exit={exitcode}]\r\n")
+            self.output_ready.emit(f"\r\nShell: {shell}\r\nPATH: {env.get('PATH', '?')[:300]}\r\n")
             return
 
         terminal_buffer.register_writer(self._tab_id, self._write_to_pty)
@@ -201,9 +209,10 @@ class PtyBridge(QObject):
                 if not self._pty or not self._pty.isalive():
                     break
                 data = self._pty.read(4096)
-                if data:
-                    terminal_buffer.append(data, tab_id=self._tab_id)
-                    self.output_ready.emit(data)
+                if not data:
+                    break
+                terminal_buffer.append(data, tab_id=self._tab_id)
+                self.output_ready.emit(data)
             except EOFError:
                 break
             except Exception:
@@ -212,7 +221,9 @@ class PtyBridge(QObject):
                 continue
 
         if not self._stop.is_set():
-            self.output_ready.emit("\r\n[Processo terminato]\r\n")
+            exitcode = getattr(self._pty, 'exitstatus', '?') if self._pty else '?'
+            self.output_ready.emit(f"\r\n[Processo terminato, exit={exitcode}]\r\n")
+            self.output_ready.emit(f"\r\n[PATH={os.environ.get('PATH', '?')[:500]}]\r\n")
 
     @Slot(str)
     def on_input(self, data: str):
@@ -278,13 +289,18 @@ class TerminalSession(QWidget):
         self._web.setHtml(_XTERM_HTML, QUrl("https://cdn.jsdelivr.net"))
         QTimer.singleShot(800, self._start_shell)
 
+    _PS_PATH = os.path.join(
+        os.environ.get("SystemRoot", r"C:\Windows"),
+        r"System32\WindowsPowerShell\v1.0\powershell.exe",
+    )
+
     def _start_shell(self):
-        self._bridge.start_pty("powershell.exe", cwd=self._cwd)
+        self._bridge.start_pty(self._PS_PATH, cwd=self._cwd)
 
     def restart(self):
         self._bridge.stop_pty()
         self._bridge.clear_requested.emit()
-        self._bridge.start_pty("powershell.exe", cwd=self._cwd)
+        self._bridge.start_pty(self._PS_PATH, cwd=self._cwd)
 
     def scroll_to_bottom(self):
         self._web.page().runJavaScript("scrollToBottom();")

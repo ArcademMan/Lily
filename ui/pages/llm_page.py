@@ -92,12 +92,14 @@ class LLMPage(QWidget):
         self._ollama_model.setCurrentText(config.ollama_model)
         self._ollama_row = _row("Modello Ollama", self._ollama_model)
         pc.addLayout(self._ollama_row)
+        self._ollama_models_ready.connect(self._populate_ollama_models)
         self._fetch_ollama_models()
 
         self._ollama_status = QLabel("")
         self._ollama_status.setFixedHeight(20)
         self._ollama_status_row = _row("Stato Ollama", self._ollama_status)
         pc.addLayout(self._ollama_status_row)
+        self._ollama_status_ready.connect(self._update_ollama_status)
         self._check_ollama_status()
 
         # anthropic fields
@@ -246,8 +248,6 @@ class LLMPage(QWidget):
 
     # ── helpers ───────────────────────────────────────────────────
     def _check_ollama_status(self):
-        self._ollama_status_ready.connect(self._update_ollama_status)
-
         def _check():
             try:
                 from core.llm.ollama_provider import OllamaProvider
@@ -267,8 +267,6 @@ class LLMPage(QWidget):
             self._ollama_status.setStyleSheet("color: #F44336; font-weight: bold;")
 
     def _fetch_ollama_models(self):
-        self._ollama_models_ready.connect(self._populate_ollama_models)
-
         def _fetch():
             try:
                 from core.llm.ollama_provider import OllamaProvider

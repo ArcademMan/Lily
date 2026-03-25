@@ -8,7 +8,7 @@ class Signal:
 
     def __init__(self):
         self._callbacks: list = []
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def connect(self, callback):
         with self._lock:

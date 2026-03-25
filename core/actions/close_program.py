@@ -10,6 +10,7 @@ def _list_processes() -> list[dict]:
     result = subprocess.run(
         ["tasklist", "/FO", "CSV", "/NH"],
         capture_output=True, text=True, timeout=5,
+        creationflags=subprocess.CREATE_NO_WINDOW,
     )
     processes = []
     seen = set()
@@ -91,7 +92,8 @@ class CloseProgramAction(Action):
                 return t("close_success", name=name)
             # Fallback: taskkill forzato
             print(f"[Azione] WM_CLOSE fallito, forzo chiusura di {target}")
-            subprocess.run(["taskkill", "/F", "/IM", target], capture_output=True, timeout=5)
+            subprocess.run(["taskkill", "/F", "/IM", target], capture_output=True, timeout=5,
+                           creationflags=subprocess.CREATE_NO_WINDOW)
             return t("close_forced", name=name)
         except Exception as e:
             return t("close_error", target=target, e=e)
@@ -109,6 +111,7 @@ class CloseProgramAction(Action):
             result = subprocess.run(
                 ["tasklist", "/FI", f"IMAGENAME eq {process_name}", "/FO", "CSV", "/NH"],
                 capture_output=True, text=True, timeout=3,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             pids = set()
             for line in result.stdout.strip().splitlines():
@@ -141,6 +144,7 @@ class CloseProgramAction(Action):
                 check = subprocess.run(
                     ["tasklist", "/FI", f"IMAGENAME eq {process_name}", "/FO", "CSV", "/NH"],
                     capture_output=True, text=True, timeout=3,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 if process_name.lower() not in check.stdout.lower():
                     return True

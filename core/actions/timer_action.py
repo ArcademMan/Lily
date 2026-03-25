@@ -13,11 +13,14 @@ class _TimerNotifier:
     speak = Signal()       # (message: str) — triggers TTS
 
     _instance = None
+    _instance_lock = threading.Lock()
 
     @classmethod
     def instance(cls):
         if cls._instance is None:
-            cls._instance = cls()
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = cls()
         return cls._instance
 
 

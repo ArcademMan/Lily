@@ -58,12 +58,14 @@ class Assistant:
         self._whisper_model = None
         self._listen_worker: ListenWorker | None = None
         self._busy = False
+        self._busy_lock = threading.Lock()
         self._processing = False
         self._last_command_log: list[str] = []
         self._pick_event = threading.Event()
         self._pick_choice: int = -1
         self._last_action_ctx: dict = {}
         self._agent_stop = threading.Event()
+        self._stdout_lock = threading.Lock()
 
         # Memoria conversazionale globale
         self._memory = ConversationMemory(
@@ -114,9 +116,10 @@ class Assistant:
             self.notify.emit(message)
 
     def _start_listening(self):
-        if self._busy:
-            return
-        self._busy = True
+        with self._busy_lock:
+            if self._busy:
+                return
+            self._busy = True
 
         self._listen_worker = ListenWorker(
             self._whisper_model, self.config.mic_device,
@@ -206,7 +209,8 @@ class Assistant:
             f'Start-Process -FilePath \'{python}\' -ArgumentList \'{script}\' -WorkingDirectory \'{cwd}\'"'
         )
         print(f"[Restart] PID={pid}, lancio wrapper...")
-        subprocess.Popen(restart_cmd, shell=True)
+        from core.utils.env import clean_env
+        subprocess.Popen(restart_cmd, shell=True, env=clean_env())
 
         # Emetti segnale — il bridge Qt lo riceve nel main thread e chiude l'app
         self.notify.emit("__RESTART__")
@@ -214,15 +218,17 @@ class Assistant:
     def _process(self, text: str):
         # Cattura log del comando
         capture_buf: list[str] = []
-        old_stdout = sys.stdout
-        sys.stdout = _LogTee(old_stdout, capture_buf)
-
         t0 = _time.perf_counter()
+
+        with self._stdout_lock:
+            old_stdout = sys.stdout
+            sys.stdout = _LogTee(old_stdout, capture_buf)
 
         try:
             self._process_inner(text, t0)
         finally:
-            sys.stdout = old_stdout
+            with self._stdout_lock:
+                sys.stdout = old_stdout
             # Salva il log solo se non è un copy_log (evita sovrascrittura)
             if capture_buf and not any("copy_log" in line for line in capture_buf[:5]):
                 self._last_command_log = list(capture_buf)
@@ -421,15 +427,6 @@ class Assistant:
             self._busy = False
             self.state_changed.emit("idle")
 
-    def _should_use_agent(self, intent_type: str, text: str) -> bool:
-        """Decide se usare l'agent loop invece del fast path."""
-        if not self.config.agent_enabled:
-            return False
-        # Intent sconosciuto con testo abbastanza lungo (non garbage)
-        if intent_type == "unknown" and len(text.split()) >= 4:
-            return True
-        return False
-
     def _confirm_command(self, cmd: str) -> bool:
         """Conferma vocale per comandi shell pericolosi."""
         from core.voice.confirmation import wait_for_confirmation
@@ -539,17 +536,6 @@ class Assistant:
 
             if intent_type == "type_in" and intent.get("parameter", "").strip().lower() == "dictate":
                 return t("dictation_window_voice_only")
-
-            # Agent mode per intent sconosciuti (legacy, se agent disabilitato)
-            if self._should_use_agent(intent_type, text):
-                from core.llm.agent import run_agent
-                result = run_agent(
-                    request=text, config=self.config, memory=self._memory,
-                    execute_fn=lambda d: execute_action(d, self.config, memory=self._memory, pick_callback=self.request_user_pick),
-                )
-                self._memory.add_user(text)
-                self._memory.add_assistant(result)
-                return result
 
             # Catena di comandi
             if intent_type == "chain":

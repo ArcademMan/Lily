@@ -10,58 +10,72 @@ MEMORY_FILE = os.path.join(SETTINGS_DIR, "memory.md")
 _lock = threading.Lock()
 
 
+def _load_unlocked() -> str:
+    """Carica memoria senza acquisire il lock (uso interno)."""
+    if not os.path.exists(MEMORY_FILE):
+        return ""
+    try:
+        with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception as e:
+        print(f"[Memory] Errore lettura: {e}")
+        return ""
+
+
+def _save_unlocked(content: str):
+    """Salva memoria senza acquisire il lock (uso interno)."""
+    try:
+        os.makedirs(SETTINGS_DIR, exist_ok=True)
+        tmp = MEMORY_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp, MEMORY_FILE)
+    except Exception as e:
+        print(f"[Memory] Errore scrittura: {e}")
+
+
 def load_memory() -> str:
     """Carica il contenuto della memoria. Ritorna stringa vuota se non esiste."""
     with _lock:
-        if not os.path.exists(MEMORY_FILE):
-            return ""
-        try:
-            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-                return f.read().strip()
-        except Exception as e:
-            print(f"[Memory] Errore lettura: {e}")
-            return ""
+        return _load_unlocked()
 
 
 def save_memory(content: str):
     """Sovrascrive l'intero contenuto della memoria."""
     with _lock:
-        try:
-            os.makedirs(SETTINGS_DIR, exist_ok=True)
-            with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-                f.write(content)
-        except Exception as e:
-            print(f"[Memory] Errore scrittura: {e}")
+        _save_unlocked(content)
 
 
 def add_memory_entry(entry: str):
     """Aggiunge una riga alla memoria."""
-    current = load_memory()
     line = entry.strip()
-    if current:
-        new_content = current + "\n" + line
-    else:
-        new_content = line
-    save_memory(new_content)
+    with _lock:
+        current = _load_unlocked()
+        if current:
+            new_content = current + "\n" + line
+        else:
+            new_content = line
+        _save_unlocked(new_content)
     print(f"[Memory] Aggiunto: {line}")
 
 
 def remove_memory_entry(keyword: str) -> bool:
     """Rimuove la prima riga che contiene la keyword. Ritorna True se trovata."""
-    current = load_memory()
-    if not current:
-        return False
-    lines = current.splitlines()
-    new_lines = []
-    found = False
-    for line in lines:
-        if not found and keyword.lower() in line.lower():
-            found = True
-            print(f"[Memory] Rimosso: {line}")
-            continue
-        new_lines.append(line)
-    if found:
-        save_memory("\n".join(new_lines))
+    with _lock:
+        current = _load_unlocked()
+        if not current:
+            return False
+        lines = current.splitlines()
+        new_lines = []
+        found = False
+        for line in lines:
+            if not found and keyword.lower() in line.lower():
+                found = True
+                print(f"[Memory] Rimosso: {line}")
+                continue
+            new_lines.append(line)
+        if found:
+            _save_unlocked("\n".join(new_lines))
     return found
 
 

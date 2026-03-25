@@ -227,10 +227,12 @@ class RunCommandAction(Action):
         try:
             inner = _unwrap_powershell(cmd)
             with self._proc_lock:
+                from core.utils.env import clean_env
                 proc = subprocess.Popen(
                     ["powershell", "-NoProfile", "-NonInteractive", "-Command", inner],
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+                    env=clean_env(),
                 )
                 self._active_proc = proc
 

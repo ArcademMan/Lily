@@ -20,10 +20,13 @@ def _try_launch_uwp(query: str) -> str | None:
     if not safe_query:
         return None
     try:
+        from core.utils.env import clean_env
         r = subprocess.run(
             ["powershell", "-c",
              f'Get-StartApps | Where-Object {{ $_.Name -like "*{safe_query}*" }} | Select-Object -First 1 -ExpandProperty AppID'],
             capture_output=True, text=True, timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            env=clean_env(),
         )
         app_id = r.stdout.strip()
         if app_id:

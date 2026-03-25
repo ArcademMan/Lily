@@ -34,6 +34,8 @@ def _build_tool_descriptions(schemas: list[dict]) -> str:
 
 def _build_system_prompt(tool_descriptions: str) -> str:
     from config import SETTINGS_DIR, LILY_DIR
+    from core.memory import get_memory_for_prompt
+    memory_block = get_memory_for_prompt() or ""
     return f"""You are Lily, an autonomous voice assistant for Windows. You have these tools:
 
 {tool_descriptions}
@@ -56,7 +58,8 @@ When you have the final answer:
 ALWAYS one of the two. Never both. Never text outside JSON.
 final_answer: plain text, no markdown, no asterisks, no formatting. It will be read aloud.
 Your settings dir: {SETTINGS_DIR} (files: lily_settings.json)
-Your install dir: {LILY_DIR}"""
+Your install dir: {LILY_DIR}
+{memory_block}"""
 
 
 def run_agent(

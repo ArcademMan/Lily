@@ -97,24 +97,28 @@ def _empty_provider():
 
 class TokenTracker:
     _instance = None
+    _init_lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._lock = threading.Lock()
-            cls._instance._data = {
-                "ollama": _empty_provider(),
-                "anthropic": _empty_provider(),
-                "openai": _empty_provider(),
-                "gemini": _empty_provider(),
-            }
-            cls._instance._session = {
-                "ollama": {"models": {}},
-                "anthropic": {"models": {}},
-                "openai": {"models": {}},
-                "gemini": {"models": {}},
-            }
-            cls._instance._load()
+            with cls._init_lock:
+                if cls._instance is None:
+                    inst = super().__new__(cls)
+                    inst._lock = threading.Lock()
+                    inst._data = {
+                        "ollama": _empty_provider(),
+                        "anthropic": _empty_provider(),
+                        "openai": _empty_provider(),
+                        "gemini": _empty_provider(),
+                    }
+                    inst._session = {
+                        "ollama": {"models": {}},
+                        "anthropic": {"models": {}},
+                        "openai": {"models": {}},
+                        "gemini": {"models": {}},
+                    }
+                    inst._load()
+                    cls._instance = inst
         return cls._instance
 
     def _load(self):
