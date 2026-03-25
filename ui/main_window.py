@@ -20,6 +20,7 @@ from ui.pages.dashboard_page import DashboardPage
 from ui.pages.log_page import LogPage
 from ui.pages.chat_page import ChatPage
 from ui.pages.terminal_page import TerminalPage
+from ui.pages.memory_page import MemoryPage
 from ui.widgets.pick_overlay import PickOverlay
 
 
@@ -108,6 +109,7 @@ class MainWindow(QMainWindow):
         self._voice_page = VoicePage(self.bridge, config=self.config)
         self._chat_page = ChatPage(self.config, bridge=self.bridge, assistant=self.assistant)
         self._llm_page = LLMPage(self.config, self.assistant)
+        self._memory_page = MemoryPage()
         self._settings_page = SettingsPage(self.config, self.assistant)
         self._dashboard_page = DashboardPage(config=self.config)
         self._log_page = LogPage(self.bridge)
@@ -116,17 +118,18 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._voice_page)      # 0 — Home (logo)
         self._stack.addWidget(self._chat_page)        # 1 — Chat
         self._stack.addWidget(self._llm_page)         # 2 — LLM
-        self._stack.addWidget(self._settings_page)    # 3 — Impostazioni
-        self._stack.addWidget(self._dashboard_page)   # 4 — Usage
+        self._stack.addWidget(self._dashboard_page)   # 3 — Usage
+        self._stack.addWidget(self._memory_page)      # 4 — Memoria
         self._stack.addWidget(self._log_page)         # 5 — Log
         self._stack.addWidget(self._terminal_page)    # 6 — Terminale
+        self._stack.addWidget(self._settings_page)    # 7 — Impostazioni
 
         body_layout.addWidget(self._stack)
         root.addWidget(body)
 
-        # Dirty indicators: LLM page = sidebar index 2, Settings = index 3
+        # Dirty indicators: LLM page = sidebar index 2, Settings = bottom button
         self._llm_page.dirty_changed.connect(lambda d: self._sidebar.set_page_dirty(2, d))
-        self._settings_page.dirty_changed.connect(lambda d: self._sidebar.set_page_dirty(3, d))
+        self._settings_page.dirty_changed.connect(lambda d: self._sidebar.set_settings_dirty(d))
 
         # Log visibility from settings
         self._settings_page.log_toggled.connect(self._sidebar.set_log_visible)
@@ -136,13 +139,20 @@ class MainWindow(QMainWindow):
         self._settings_page.terminal_toggled.connect(self._sidebar.set_terminal_visible)
         self._sidebar.set_terminal_visible(getattr(self.config, "terminal_enabled", False))
 
+        # Memory visibility from settings
+        self._settings_page.memory_toggled.connect(self._sidebar.set_memory_visible)
+        self._sidebar.set_memory_visible(getattr(self.config, "memory_enabled", False))
+
+        # Quick navigation from settings page
+        self._settings_page.navigate_to.connect(self._switch_page)
+
     def _switch_page(self, index: int):
         self._stack.setCurrentIndex(index)
         # Overlay visible when not on Home (0) or Chat (1)
         self._overlay.set_on_relevant_page(index in (0, 1))
         if index == 0:
             self._voice_page._update_model_label()
-        elif index == 4:
+        elif index == 3:
             self._dashboard_page.refresh()
 
     def _on_pick_request(self, results_with_meta, suggested_index):

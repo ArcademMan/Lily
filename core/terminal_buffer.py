@@ -8,11 +8,22 @@ import re
 import threading
 from collections import deque
 
-# Regex per rimuovere sequenze ANSI escape (colori, cursore, ecc.)
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[[\d;]*[Hf]")
+# Regex per rimuovere sequenze ANSI/VT escape (colori, cursore, OSC, ecc.)
+_ANSI_RE = re.compile(
+    r"\x1b"            # ESC
+    r"(?:"
+    r"\[[0-9;?]*[ -/]*[@-~]"   # CSI: ESC [ ... finalchar (SGR, cursor, erase, mode, etc.)
+    r"|\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC: ESC ] ... (BEL o ST)
+    r"|\([A-Z0-9]"             # charset: ESC ( B, etc.
+    r"|[>=<7-9c]"              # mode set/reset, save/restore cursor, reset
+    r")"
+    r"|\r"             # carriage return (pulizia output PTY)
+)
 
 _lock = threading.Lock()
 _buffers: dict[str, deque[str]] = {}
+_pending: dict[str, str] = {}  # chunk parziali in attesa di newline
+_total_lines: dict[str, int] = {}  # contatore monotono per tab (non resettato dalla deque)
 _labels: dict[str, str] = {}  # tab_id -> label (es. "PS 1", "Claude Code")
 _writers: dict[str, callable] = {}  # tab_id -> write function (from PtyBridge)
 _active_tab: str | None = None
@@ -30,15 +41,42 @@ def _get_buf(tab_id: str) -> deque[str]:
 
 
 def append(raw_output: str, tab_id: str = None) -> None:
-    """Aggiunge output PTY al buffer, ripulito dai codici ANSI."""
+    """Aggiunge output PTY al buffer, ripulito dai codici ANSI.
+    Accumula chunk parziali e flusha solo su newline."""
     clean = _strip_ansi(raw_output)
-    if not clean.strip():
+    if not clean:
         return
     tid = tab_id or _active_tab or "_default"
     with _lock:
+        pending = _pending.get(tid, "") + clean
+        # Splitta su newline, l'ultimo elemento e' la parte senza newline finale
+        parts = pending.split("\n")
+        _pending[tid] = parts[-1]  # tieni il chunk incompleto
+        complete_lines = parts[:-1]
+        if not complete_lines:
+            return
         buf = _get_buf(tid)
-        for line in clean.splitlines():
-            buf.append(line)
+        count = 0
+        for line in complete_lines:
+            stripped = line.strip()
+            if stripped:
+                buf.append(stripped)
+                count += 1
+        if count:
+            _total_lines[tid] = _total_lines.get(tid, 0) + count
+
+
+def flush_pending(tab_id: str = None) -> None:
+    """Flusha i chunk parziali nel buffer (per prompt senza newline finale)."""
+    tid = tab_id or _active_tab or "_default"
+    with _lock:
+        pending = _pending.get(tid, "").strip()
+        if not pending:
+            return
+        _pending[tid] = ""
+        buf = _get_buf(tid)
+        buf.append(pending)
+        _total_lines[tid] = _total_lines.get(tid, 0) + 1
 
 
 def get_text(tab_id: str = None, max_lines: int = 100) -> str:
@@ -59,17 +97,27 @@ def get_line_count(tab_id: str = None) -> int:
         return len(buf) if buf else 0
 
 
+def get_total_lines(tab_id: str = None) -> int:
+    """Contatore monotono: totale righe mai aggiunte (non decresce con la deque)."""
+    tid = tab_id or _active_tab or "_default"
+    with _lock:
+        return _total_lines.get(tid, 0)
+
+
 def clear(tab_id: str = None) -> None:
     tid = tab_id or _active_tab or "_default"
     with _lock:
         if tid in _buffers:
             _buffers[tid].clear()
+        _pending.pop(tid, None)
 
 
 def remove_tab(tab_id: str) -> None:
     """Rimuove un buffer tab."""
     with _lock:
         _buffers.pop(tab_id, None)
+        _pending.pop(tab_id, None)
+        _total_lines.pop(tab_id, None)
         _labels.pop(tab_id, None)
         _writers.pop(tab_id, None)
 

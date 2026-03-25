@@ -44,7 +44,7 @@ def _make_circle_pixmap(path: str, size: int) -> QPixmap:
 
 # ── Worker thread per pipeline completa ────────────────────────────
 class _ChatWorker(QThread):
-    finished = Signal(str, int, int)  # response, input_tokens, output_tokens
+    finished = Signal(str, int, int, str)  # response, input_tokens, output_tokens, mode
 
     def __init__(self, text: str, assistant):
         super().__init__()
@@ -62,13 +62,14 @@ class _ChatWorker(QThread):
         after_in, after_out = tracker.session_totals()
         tok_in = after_in - before_in
         tok_out = after_out - before_out
-        self.finished.emit(response, tok_in, tok_out)
+        mode = getattr(self.assistant, "_last_mode", "")
+        self.finished.emit(response, tok_in, tok_out, mode)
 
 
 # ── Bolla messaggio ────────────────────────────────────────────────
 class ChatBubble(QFrame):
     def __init__(self, text: str, is_user: bool, is_voice: bool = False,
-                 tok_in: int = 0, tok_out: int = 0, parent=None):
+                 tok_in: int = 0, tok_out: int = 0, mode: str = "", parent=None):
         super().__init__(parent)
         self.setObjectName("chatBubble")
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
@@ -132,9 +133,14 @@ class ChatBubble(QFrame):
         )
         layout.addWidget(label)
 
-        # Token info (solo per bolle di Lily, se presenti)
-        if not is_user and (tok_in > 0 or tok_out > 0):
-            tok_label = QLabel(f"\u25B8 {tok_in} in \u2022 {tok_out} out")
+        # Token info + mode tag (solo per bolle di Lily, se presenti)
+        if not is_user and (tok_in > 0 or tok_out > 0 or mode):
+            parts = []
+            if mode:
+                parts.append(mode)
+            if tok_in > 0 or tok_out > 0:
+                parts.append(f"{tok_in} in \u2022 {tok_out} out")
+            tok_label = QLabel("\u25B8 " + "  \u2022  ".join(parts))
             tok_label.setAlignment(Qt.AlignmentFlag.AlignRight)
             tok_label.setStyleSheet(
                 "QLabel { color: rgba(255,255,255,40); font-size: 9px;"
@@ -343,19 +349,26 @@ class ChatPage(QWidget):
     def _update_context(self):
         """Aggiorna l'indicatore del contesto che verrà inviato all'LLM."""
         try:
-            from core.llm.prompts import (
-                get_classify_prompt, get_chat_system_prompt,
-            )
-
             provider = getattr(self.config, "provider", "ollama")
+            agent_only = getattr(self.config, "agent_enabled", False)
+            classify_agent = getattr(self.config, "classify_agent_enabled", False)
 
-            # System prompt: sia quello di chat che quello di classificazione
-            chat_system = get_chat_system_prompt()
-            classify_system = get_classify_prompt(provider)
-
-            # Il più grande dei due (classify è usato dalla voce, chat dalla chat testuale)
-            system_text = max(chat_system, classify_system, key=len)
-            system_tok = self._count_tokens(system_text)
+            if agent_only:
+                # Agent mode: usa il prompt agent con tool descriptions
+                from core.llm.agent import _build_tool_descriptions, _build_system_prompt
+                from core.actions import get_tool_schemas
+                schemas = get_tool_schemas()
+                agent_prompt = _build_system_prompt(_build_tool_descriptions(schemas))
+                system_tok = self._count_tokens(agent_prompt)
+            else:
+                # Classify mode (o classify+agent): usa il prompt classify
+                from core.llm.prompts import get_classify_prompt
+                classify_system = get_classify_prompt(provider)
+                # Aggiungi memory block se presente
+                from core.memory import get_memory_for_prompt
+                memory_block = get_memory_for_prompt()
+                full_system = classify_system + memory_block if memory_block else classify_system
+                system_tok = self._count_tokens(full_system)
 
             # History in memoria
             history_tok = 0
@@ -409,9 +422,9 @@ class ChatPage(QWidget):
             self._welcome_label = None
 
     def _add_bubble(self, text: str, is_user: bool, is_voice: bool = False,
-                    tok_in: int = 0, tok_out: int = 0):
+                    tok_in: int = 0, tok_out: int = 0, mode: str = ""):
         self._remove_welcome()
-        bubble = ChatBubble(text, is_user, is_voice=is_voice, tok_in=tok_in, tok_out=tok_out)
+        bubble = ChatBubble(text, is_user, is_voice=is_voice, tok_in=tok_in, tok_out=tok_out, mode=mode)
 
         wrapper = QWidget()
         wrapper.setStyleSheet("background: transparent; border: none;")
@@ -464,10 +477,15 @@ class ChatPage(QWidget):
         except Exception:
             pass
 
+        # Recupera il mode dall'assistant (classify, agent, classify+agent, confi, pick)
+        mode = ""
+        if self._assistant:
+            mode = getattr(self._assistant, "_last_mode", "")
+
         if text:
             self._add_bubble(text, is_user=True, is_voice=True)
         if result:
-            self._add_bubble(result, is_user=False, is_voice=True, tok_in=tok_in, tok_out=tok_out)
+            self._add_bubble(result, is_user=False, is_voice=True, tok_in=tok_in, tok_out=tok_out, mode=mode)
         self._update_tokens()
         self._update_context()
 
@@ -495,12 +513,12 @@ class ChatPage(QWidget):
         self._worker.finished.connect(self._on_chat_response)
         self._worker.start()
 
-    def _on_chat_response(self, response: str, tok_in: int, tok_out: int):
+    def _on_chat_response(self, response: str, tok_in: int, tok_out: int, mode: str):
         if hasattr(self, '_typing_label') and self._typing_label:
             self._typing_label.deleteLater()
             self._typing_label = None
 
-        self._add_bubble(response, is_user=False, tok_in=tok_in, tok_out=tok_out)
+        self._add_bubble(response, is_user=False, tok_in=tok_in, tok_out=tok_out, mode=mode)
         self._update_tokens()
         self._update_context()
         if self._worker is not None:

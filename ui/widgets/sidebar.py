@@ -14,9 +14,12 @@ def _get_pages():
     return [
         ("mdi6.chat-outline",     t("sidebar_chat")),
         ("mdi6.brain",            t("sidebar_llm")),
-        ("mdi6.cog-outline",      t("sidebar_settings")),
         ("mdi6.chart-bar",        t("sidebar_usage")),
     ]
+
+
+_MEMORY_ICON = "mdi6.head-lightbulb-outline"
+_SETTINGS_ICON = "mdi6.cog-outline"
 
 
 _LOG_ICON = "mdi6.text-box-outline"
@@ -137,6 +140,12 @@ class Sidebar(QWidget):
             layout.addWidget(btn)
             self._buttons.append(btn)
 
+        # ── Memory button (hidden by default) ─────────────────────
+        self._memory_btn = SidebarButton(_MEMORY_ICON, t("sidebar_memory"), self)
+        self._memory_btn.clicked.connect(lambda checked: self._on_click(4))
+        self._memory_btn.setVisible(False)
+        layout.addWidget(self._memory_btn)
+
         # ── Log button (hidden by default) ────────────────────────
         self._log_btn = SidebarButton(_LOG_ICON, t("sidebar_log"), self)
         self._log_btn.clicked.connect(lambda checked: self._on_click(5))
@@ -150,6 +159,12 @@ class Sidebar(QWidget):
         layout.addWidget(self._terminal_btn)
 
         layout.addStretch()
+
+        # ── Settings button (bottom, separated) ──────────────────
+        self._settings_btn = SidebarButton(_SETTINGS_ICON, t("sidebar_settings"), self)
+        self._settings_btn.clicked.connect(lambda checked: self._on_click(7))
+        layout.addWidget(self._settings_btn)
+
         self.set_active(0)  # Home — nessun bottone evidenziato
 
     def _on_click(self, index: int):
@@ -159,8 +174,10 @@ class Sidebar(QWidget):
     def set_active(self, index: int):
         for i, btn in enumerate(self._buttons):
             btn.set_active(i == index - 1)
+        self._memory_btn.set_active(index == 4)
         self._log_btn.set_active(index == 5)
         self._terminal_btn.set_active(index == 6)
+        self._settings_btn.set_active(index == 7)
 
     def set_log_visible(self, visible: bool):
         self._log_btn.setVisible(visible)
@@ -168,9 +185,15 @@ class Sidebar(QWidget):
     def set_terminal_visible(self, visible: bool):
         self._terminal_btn.setVisible(visible)
 
+    def set_memory_visible(self, visible: bool):
+        self._memory_btn.setVisible(visible)
+
     def set_page_dirty(self, page_index: int, dirty: bool):
         """Mark a page's sidebar button as having unsaved changes.
         page_index uses the same numbering as page_selected (1-based for buttons)."""
         btn_idx = page_index - 1
         if 0 <= btn_idx < len(self._buttons):
             self._buttons[btn_idx].set_dirty(dirty)
+
+    def set_settings_dirty(self, dirty: bool):
+        self._settings_btn.set_dirty(dirty)

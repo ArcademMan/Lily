@@ -21,15 +21,19 @@ class HotkeyManager:
         self._registered = False
         self._hotkey_pressed = False
         self._suppress_caps = False
+        self._suppress_key = False
+        self._block_hook = None
         self._ignore_until = 0
 
-    def register(self, hotkey: str):
+    def register(self, hotkey: str, suppress: bool = False):
         if self._registered:
             keyboard.unhook_all()
+            self._block_hook = None
             self._registered = False
 
         self._hotkey_pressed = False
         self._suppress_caps = hotkey.lower().strip() in _TOGGLE_KEYS
+        self._suppress_key = suppress and not self._suppress_caps
 
         if self._suppress_caps:
             self._force_caps_off()
@@ -63,11 +67,15 @@ class HotkeyManager:
 
         try:
             keyboard.hook(on_event)
-            self._registered = True
-            if self._suppress_caps:
+            # Blocca il tasto se suppress attivo (non per Caps Lock che ha il suo meccanismo)
+            if self._suppress_key:
+                self._block_hook = keyboard.block_key(hotkey)
+                print(f"[Hotkey] Registrato: {hotkey} (tasto bloccato)")
+            elif self._suppress_caps:
                 print("[Hotkey] Caps Lock usato come hotkey (toggle disabilitato)")
             else:
                 print(f"[Hotkey] Registrato: {hotkey}")
+            self._registered = True
         except Exception as e:
             print(f"[Hotkey] Errore registrazione: {e}")
 

@@ -48,10 +48,12 @@ LILY_DEFAULTS = {
     "dictation_silence_duration": 3.5,
     "dictation_max_duration": 60,
     "overlay_enabled": True,
+    "classify_agent_enabled": False,
     "agent_enabled": False,
     "agent_max_iterations": 6,
     "terminal_enabled": False,
     "log_enabled": False,
+    "hotkey_suppress": False,
 }
 
 ALL_DEFAULTS = {**USER_DEFAULTS, **LILY_DEFAULTS}
@@ -73,10 +75,12 @@ def _load_json(path: str) -> dict:
 
 
 def _save_json(path: str, data: dict):
-    """Salva un dict come JSON."""
+    """Salva un dict come JSON (atomico: .tmp + os.replace)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, path)
 
 
 class Config:

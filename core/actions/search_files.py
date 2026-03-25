@@ -23,10 +23,11 @@ class SearchFilesAction(Action):
 
     def execute(self, intent: dict, config, pick_callback=None, **kwargs) -> str:
         query = intent.get("query", "").strip()
+        search_terms = intent.get("search_terms", [])
+        if not query and search_terms:
+            query = search_terms[0]
         if not query:
             return t("search_no_query")
-
-        search_terms = intent.get("search_terms", [])
         if query not in search_terms:
             search_terms.insert(0, query)
 

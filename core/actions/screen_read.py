@@ -70,8 +70,9 @@ class ScreenReadAction(Action):
             if not thinking:
                 system_prompt = _apply_thinking(system_prompt, config)
 
+            from core.llm.brain import _get_model
             raw = provider.chat(
-                model=config.ollama_model,
+                model=_get_model(config),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt},

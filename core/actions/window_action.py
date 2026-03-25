@@ -56,7 +56,7 @@ class WindowAction(Action):
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Nome del programma (per snap/move/minimize/restore/nudge)"},
-                "parameter": {"type": "string", "description": "close_explorer/minimize_all/show_desktop/snap_left/snap_right/move_monitor/restore/minimize/close_all/nudge_DIRECTION_PIXELS (es. nudge_left_175, nudge_up_200, default 50px)"}
+                "parameter": {"type": "string", "description": "close_explorer/minimize_all/show_desktop/snap_left/snap_right/move_monitor/move_monitor N(specific monitor)/restore/minimize/close_all/nudge_DIRECTION_PIXELS (es. nudge_left_175, nudge_up_200, default 50px)"}
             },
             "required": ["parameter"]
         }
@@ -76,8 +76,10 @@ class WindowAction(Action):
             return self._snap(query, "left", terms)
         elif parameter == "snap_right":
             return self._snap(query, "right", terms)
-        elif parameter == "move_monitor":
-            return self._move_to_other_monitor(query, terms)
+        elif parameter == "move_monitor" or parameter.startswith("move_monitor"):
+            parts = parameter.split()
+            target_idx = int(parts[1]) - 1 if len(parts) > 1 and parts[1].isdigit() else None
+            return self._move_to_other_monitor(query, terms, target_idx=target_idx)
         elif parameter == "restore":
             return self._restore(query, terms)
         elif parameter == "minimize":
@@ -130,7 +132,7 @@ class WindowAction(Action):
         lato = t("window_snap_left") if direction == "left" else t("window_snap_right")
         return t("window_snapped", side=lato)
 
-    def _move_to_other_monitor(self, query: str, terms: list[str] = None) -> str:
+    def _move_to_other_monitor(self, query: str, terms: list[str] = None, target_idx: int = None) -> str:
         if not query:
             return t("window_no_query")
 
@@ -157,8 +159,11 @@ class WindowAction(Action):
                 current_idx = i
                 break
 
-        # Sposta sul prossimo monitor
-        next_idx = (current_idx + 1) % len(monitors)
+        # Sposta sul monitor target (se specificato) o sul prossimo
+        if target_idx is not None and 0 <= target_idx < len(monitors):
+            next_idx = target_idx
+        else:
+            next_idx = (current_idx + 1) % len(monitors)
         next_mon = monitors[next_idx]
 
         # Mantieni le stesse dimensioni relative

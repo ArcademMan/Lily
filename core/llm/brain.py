@@ -2,12 +2,16 @@
 
 import json
 import re
+import threading
 
 from core.llm import get_provider
 from core.llm.prompts import (
     get_classify_prompt, get_pick_prompt, get_retry_prompt,
     get_chain_prompt, get_chat_system_prompt,
 )
+
+# Flag per tracciare se pick_best_result ha fatto una chiamata LLM
+_pick_used = threading.local()
 
 
 def _get_model(config) -> str:
@@ -184,6 +188,8 @@ def pick_best_result(user_query: str, results: list[str], config,
         return -1, False
     if len(results) == 1:
         return 0, True
+
+    _pick_used.flag = True
 
     from core.search import get_path_metadata
 

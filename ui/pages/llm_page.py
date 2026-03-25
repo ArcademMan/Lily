@@ -9,20 +9,34 @@ from PySide6.QtWidgets import (
     QPushButton, QScrollArea,
 )
 
+from core.i18n import t
+from ui.widgets.ai_hint import AiHint
 from ui.widgets.glass_card import GlassCard
 
 
-def _row(label_text: str, widget: QWidget) -> QHBoxLayout:
+def _row(label_text: str, widget: QWidget, hint: str = "") -> QHBoxLayout:
     row = QHBoxLayout()
     lbl = QLabel(label_text)
     lbl.setFixedWidth(180)
     row.addWidget(lbl)
     row.addWidget(widget)
+    if hint:
+        row.addWidget(AiHint(hint))
+    return row
+
+
+def _check_row(checkbox: QCheckBox, hint: str = "") -> QHBoxLayout:
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.addWidget(checkbox)
+    if hint:
+        row.addWidget(AiHint(hint))
+    row.addStretch()
     return row
 
 
 def _slider_row(label_text: str, min_val: int, max_val: int, value: int,
-                fmt=str) -> tuple[QHBoxLayout, QSlider, QLabel]:
+                fmt=str, hint: str = "") -> tuple[QHBoxLayout, QSlider, QLabel]:
     row = QHBoxLayout()
     lbl = QLabel(label_text)
     lbl.setFixedWidth(180)
@@ -35,6 +49,8 @@ def _slider_row(label_text: str, min_val: int, max_val: int, value: int,
     val_label.setFixedWidth(40)
     slider.valueChanged.connect(lambda v: val_label.setText(fmt(v)))
     row.addWidget(val_label)
+    if hint:
+        row.addWidget(AiHint(hint))
     return row, slider, val_label
 
 
@@ -84,13 +100,13 @@ class LLMPage(QWidget):
         self._provider.addItems(["ollama", "anthropic", "openai", "gemini"])
         self._provider.setCurrentText(config.provider)
         self._provider.currentTextChanged.connect(self._on_provider_changed)
-        pc.addLayout(_row("Provider", self._provider))
+        pc.addLayout(_row("Provider", self._provider, t("ai_hint_llm_provider")))
 
         # ollama fields
         self._ollama_model = QComboBox()
         self._ollama_model.setEditable(True)
         self._ollama_model.setCurrentText(config.ollama_model)
-        self._ollama_row = _row("Modello Ollama", self._ollama_model)
+        self._ollama_row = _row("Modello Ollama", self._ollama_model, t("ai_hint_llm_ollama_model"))
         pc.addLayout(self._ollama_row)
         self._ollama_models_ready.connect(self._populate_ollama_models)
         self._fetch_ollama_models()
@@ -151,7 +167,8 @@ class LLMPage(QWidget):
 
         # max results slider (cloud only, always last)
         max_res_row, self._max_results, self._mr_label = _slider_row(
-            "Max risultati (Cloud)", 1, 30, config.anthropic_max_results)
+            "Max risultati", 1, 30, config.anthropic_max_results,
+            hint=t("ai_hint_llm_max_results"))
         self._max_results_row = max_res_row
         pc.addLayout(max_res_row)
 
@@ -166,24 +183,35 @@ class LLMPage(QWidget):
         gc = gen_card.body()
         gc.setSpacing(10)
 
-        self._thinking = QCheckBox("Abilita ragionamento esteso")
+        self._thinking = QCheckBox("Ragionamento esteso")
         self._thinking.setChecked(config.thinking_enabled)
-        gc.addWidget(self._thinking)
+        gc.addLayout(_check_row(self._thinking, t("ai_hint_llm_thinking")))
 
-        self._agent = QCheckBox("Modalita' agente (autonoma, usa tool e shell)")
+        self._classify_agent = QCheckBox("Classify & Agent")
+        self._classify_agent.setChecked(config.classify_agent_enabled)
+        gc.addLayout(_check_row(self._classify_agent, t("ai_hint_llm_classify_agent")))
+
+        self._agent = QCheckBox("Agent mode")
         self._agent.setChecked(config.agent_enabled)
-        gc.addWidget(self._agent)
+        gc.addLayout(_check_row(self._agent, t("ai_hint_llm_agent")))
+
+        # Mutually exclusive: classify_agent <-> agent
+        self._classify_agent.toggled.connect(self._on_classify_agent_toggled)
+        self._agent.toggled.connect(self._on_agent_toggled)
 
         np_row, self._num_predict, self._np_label = _slider_row(
-            "Lunghezza risposta (comandi)", 32, 512, config.num_predict)
+            "Token risposta (comandi)", 32, 512, config.num_predict,
+            hint=t("ai_hint_llm_num_predict"))
         gc.addLayout(np_row)
 
         cnp_row, self._chat_num_predict, self._cnp_label = _slider_row(
-            "Lunghezza risposta (chat)", 64, 1024, config.chat_num_predict)
+            "Token risposta (chat)", 64, 1024, config.chat_num_predict,
+            hint=t("ai_hint_llm_chat_predict"))
         gc.addLayout(cnp_row)
 
         hist_row, self._chat_max_history, self._hist_label = _slider_row(
-            "Storico chat", 1, 20, config.chat_max_history)
+            "Storico chat", 1, 20, config.chat_max_history,
+            hint=t("ai_hint_llm_history"))
         gc.addLayout(hist_row)
 
         form.addWidget(gen_card)
@@ -218,6 +246,7 @@ class LLMPage(QWidget):
         self._gemini_model.currentTextChanged.connect(self._check_dirty)
         self._max_results.valueChanged.connect(self._check_dirty)
         self._thinking.toggled.connect(self._check_dirty)
+        self._classify_agent.toggled.connect(self._check_dirty)
         self._agent.toggled.connect(self._check_dirty)
         self._num_predict.valueChanged.connect(self._check_dirty)
         self._chat_num_predict.valueChanged.connect(self._check_dirty)
@@ -236,6 +265,7 @@ class LLMPage(QWidget):
             self._gemini_model.currentText(),
             self._max_results.value(),
             self._thinking.isChecked(),
+            self._classify_agent.isChecked(),
             self._agent.isChecked(),
             self._num_predict.value(),
             self._chat_num_predict.value(),
@@ -286,6 +316,18 @@ class LLMPage(QWidget):
         self._ollama_model.setCurrentText(current)
         self._ollama_model.blockSignals(False)
 
+    def _on_classify_agent_toggled(self, checked: bool):
+        if checked:
+            self._agent.blockSignals(True)
+            self._agent.setChecked(False)
+            self._agent.blockSignals(False)
+
+    def _on_agent_toggled(self, checked: bool):
+        if checked:
+            self._classify_agent.blockSignals(True)
+            self._classify_agent.setChecked(False)
+            self._classify_agent.blockSignals(False)
+
     def _on_provider_changed(self, provider: str):
         is_ollama = provider == "ollama"
         is_anthropic = provider == "anthropic"
@@ -320,6 +362,7 @@ class LLMPage(QWidget):
         self._config.gemini_api_key = self._gemini_api_key.text().strip()
         self._config.gemini_model = self._gemini_model.currentText()
         self._config.thinking_enabled = self._thinking.isChecked()
+        self._config.classify_agent_enabled = self._classify_agent.isChecked()
         self._config.agent_enabled = self._agent.isChecked()
         self._config.num_predict = self._num_predict.value()
         self._config.chat_num_predict = self._chat_num_predict.value()

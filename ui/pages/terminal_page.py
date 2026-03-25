@@ -16,9 +16,10 @@ from PySide6.QtWidgets import (
     QPushButton, QStackedWidget, QSizePolicy,
 )
 
-from winpty import PtyProcess
+from winpty.winpty import PTY
 
 from core import terminal_buffer
+from core.terminal_watcher import TerminalWatcher
 
 
 # ── xterm.js HTML ────────────────────────────────────────────────
@@ -152,7 +153,7 @@ class PtyBridge(QObject):
     def __init__(self, tab_id: str, parent=None):
         super().__init__(parent)
         self._tab_id = tab_id
-        self._pty: PtyProcess | None = None
+        self._pty: PTY | None = None
         self._reader_thread: threading.Thread | None = None
         self._stop = threading.Event()
 
@@ -160,32 +161,34 @@ class PtyBridge(QObject):
         self.stop_pty()
         self._stop.clear()
 
-        from core.utils.env import clean_env
-        env = clean_env()
+        env = os.environ.copy()
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
 
+        # Risolvi il path completo della shell (evita which() di PtyProcess)
+        from shutil import which
+        shell_path = which(shell, path=env.get("PATH", os.defpath)) or shell
+
+        # Environment block per PTY (null-separated string)
+        env_str = "\0".join(f"{k}={v}" for k, v in env.items()) + "\0"
+
         try:
-            self._pty = PtyProcess.spawn(
-                shell, cwd=cwd, env=env, dimensions=(rows, cols),
-            )
+            # In frozen mode, ConPTY crasha (conhost.exe 0xC0000142).
+            # Usiamo il backend WinPTY legacy che usa winpty-agent.exe.
+            import sys
+            backend = 1 if getattr(sys, "frozen", False) else None  # 1 = WinPTY
+            self._pty = PTY(cols, rows, backend=backend)
+            self._pty.spawn(shell_path, cwd=cwd, env=env_str)
         except Exception as e:
             self.output_ready.emit(f"\r\nErrore avvio shell: {e}\r\n")
-            self.output_ready.emit(f"\r\nShell: {shell}\r\nPATH: {env.get('PATH', '?')[:300]}\r\n")
+            self._pty = None
             return
 
-        if not self._pty.isalive():
-            exitcode = getattr(self._pty, 'exitstatus', '?')
-            self.output_ready.emit(f"\r\n[Shell morta subito, exit={exitcode}]\r\n")
-            self.output_ready.emit(f"\r\nShell: {shell}\r\nPATH: {env.get('PATH', '?')[:300]}\r\n")
-            return
-
-        terminal_buffer.register_writer(self._tab_id, self._write_to_pty)
+        terminal_buffer.register_writer(self._tab_id, self._write)
         self._reader_thread = threading.Thread(target=self._read_loop, daemon=True)
         self._reader_thread.start()
 
-    def _write_to_pty(self, data: str):
-        """Scrive dati nel PTY. Usato dal terminal_buffer.write()."""
+    def _write(self, data: str):
         if self._pty and self._pty.isalive():
             self._pty.write(data)
 
@@ -194,7 +197,9 @@ class PtyBridge(QObject):
         if self._pty:
             try:
                 if self._pty.isalive():
-                    self._pty.close(force=True)
+                    self._pty.write("\x03")  # Ctrl-C
+                    import time
+                    time.sleep(0.1)
             except Exception:
                 pass
             self._pty = None
@@ -204,26 +209,27 @@ class PtyBridge(QObject):
         return self._pty is not None and self._pty.isalive()
 
     def _read_loop(self):
+        import time
         while not self._stop.is_set():
             try:
                 if not self._pty or not self._pty.isalive():
                     break
-                data = self._pty.read(4096)
-                if not data:
-                    break
-                terminal_buffer.append(data, tab_id=self._tab_id)
-                self.output_ready.emit(data)
+                data = self._pty.read(blocking=False)
+                if data:
+                    terminal_buffer.append(data, tab_id=self._tab_id)
+                    self.output_ready.emit(data)
+                else:
+                    time.sleep(0.01)
             except EOFError:
                 break
             except Exception:
                 if self._stop.is_set():
                     break
+                time.sleep(0.01)
                 continue
 
         if not self._stop.is_set():
-            exitcode = getattr(self._pty, 'exitstatus', '?') if self._pty else '?'
-            self.output_ready.emit(f"\r\n[Processo terminato, exit={exitcode}]\r\n")
-            self.output_ready.emit(f"\r\n[PATH={os.environ.get('PATH', '?')[:500]}]\r\n")
+            self.output_ready.emit("\r\n[Processo terminato]\r\n")
 
     @Slot(str)
     def on_input(self, data: str):
@@ -237,7 +243,7 @@ class PtyBridge(QObject):
     def on_resize(self, cols: int, rows: int):
         if self._pty and self._pty.isalive():
             try:
-                self._pty.setwinsize(rows, cols)
+                self._pty.set_size(cols, rows)
             except Exception:
                 pass
 
@@ -289,18 +295,13 @@ class TerminalSession(QWidget):
         self._web.setHtml(_XTERM_HTML, QUrl("https://cdn.jsdelivr.net"))
         QTimer.singleShot(800, self._start_shell)
 
-    _PS_PATH = os.path.join(
-        os.environ.get("SystemRoot", r"C:\Windows"),
-        r"System32\WindowsPowerShell\v1.0\powershell.exe",
-    )
-
     def _start_shell(self):
-        self._bridge.start_pty(self._PS_PATH, cwd=self._cwd)
+        self._bridge.start_pty("powershell.exe", cwd=self._cwd)
 
     def restart(self):
         self._bridge.stop_pty()
         self._bridge.clear_requested.emit()
-        self._bridge.start_pty(self._PS_PATH, cwd=self._cwd)
+        self._bridge.start_pty("powershell.exe", cwd=self._cwd)
 
     def scroll_to_bottom(self):
         self._web.page().runJavaScript("scrollToBottom();")
@@ -420,6 +421,7 @@ class TerminalPage(QWidget):
         self._first_show = True
 
         self._build_ui()
+        TerminalWatcher.instance().on_state_changed.connect(self._on_watch_state_changed)
 
     def _build_ui(self):
         outer = QVBoxLayout(self)
@@ -460,6 +462,14 @@ class TerminalPage(QWidget):
         tab_bar_row.addWidget(add_btn)
 
         tab_bar_row.addStretch()
+
+        # Monitor toggle button
+        self._monitor_btn = QPushButton()
+        self._monitor_btn.setFixedSize(34, 34)
+        self._monitor_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._monitor_btn.clicked.connect(self._toggle_monitoring)
+        tab_bar_row.addWidget(self._monitor_btn)
+
         outer.addLayout(tab_bar_row)
         outer.addSpacing(4)
 
@@ -490,6 +500,8 @@ class TerminalPage(QWidget):
         self._bottom_btn.clicked.connect(self._scroll_to_bottom)
         self._bottom_btn.raise_()
 
+        self._update_monitor_btn()
+
     # ── Tab management ────────────────────────────────────────────
 
     def _add_tab(self):
@@ -516,6 +528,7 @@ class TerminalPage(QWidget):
         terminal_buffer.set_active(session.tab_id)
         for i, s in enumerate(self._sessions):
             self._tab_buttons[i].set_active(s is session)
+        self._update_monitor_btn()
 
     def _close_tab(self, session: TerminalSession):
         # Don't close last tab
@@ -538,6 +551,38 @@ class TerminalPage(QWidget):
         # Switch to neighbor
         new_idx = min(idx, len(self._sessions) - 1)
         self._switch_to(self._sessions[new_idx])
+
+    def _on_watch_state_changed(self, tab_id: str, watching: bool):
+        QTimer.singleShot(0, self._update_monitor_btn)
+
+    def _toggle_monitoring(self):
+        current = self._stack.currentWidget()
+        if not isinstance(current, TerminalSession):
+            return
+        watcher = TerminalWatcher.instance()
+        tab_id = current.tab_id
+        if watcher.is_watching(tab_id):
+            watcher.unwatch(tab_id)
+        else:
+            watcher.watch(tab_id)
+        self._update_monitor_btn()
+
+    def _update_monitor_btn(self):
+        current = self._stack.currentWidget()
+        active = False
+        if isinstance(current, TerminalSession):
+            active = TerminalWatcher.instance().is_watching(current.tab_id)
+
+        color = "#7C5CFC" if active else "#888"
+        icon = qta.icon("mdi6.eye" if active else "mdi6.eye-off-outline", color=color)
+        self._monitor_btn.setIcon(icon)
+        self._monitor_btn.setIconSize(QSize(18, 18))
+        self._monitor_btn.setToolTip("Monitoring attivo" if active else "Monitoring disattivato")
+        border = "1px solid rgba(124, 92, 252, 0.4)" if active else "1px solid transparent"
+        self._monitor_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: {border}; border-radius: 8px; }}"
+            f"QPushButton:hover {{ background: rgba(255, 255, 255, 10); }}"
+        )
 
     def _scroll_to_bottom(self):
         current = self._stack.currentWidget()

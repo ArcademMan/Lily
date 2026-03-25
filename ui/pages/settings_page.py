@@ -10,21 +10,36 @@ from PySide6.QtWidgets import (
     QPushButton, QScrollArea, QFileDialog, QMessageBox,
 )
 
+import qtawesome as qta
+
 from core.i18n import t
+from ui.widgets.ai_hint import AiHint
 from ui.widgets.glass_card import GlassCard
 
 
-def _row(label_text: str, widget: QWidget) -> QHBoxLayout:
+def _row(label_text: str, widget: QWidget, hint: str = "") -> QHBoxLayout:
     row = QHBoxLayout()
     lbl = QLabel(label_text)
     lbl.setFixedWidth(160)
     row.addWidget(lbl)
     row.addWidget(widget)
+    if hint:
+        row.addWidget(AiHint(hint))
+    return row
+
+
+def _check_row(checkbox: QCheckBox, hint: str = "") -> QHBoxLayout:
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.addWidget(checkbox)
+    if hint:
+        row.addWidget(AiHint(hint))
+    row.addStretch()
     return row
 
 
 def _slider_row(label_text: str, min_val: int, max_val: int, value: int,
-                fmt=str) -> tuple[QHBoxLayout, QSlider, QLabel]:
+                fmt=str, hint: str = "") -> tuple[QHBoxLayout, QSlider, QLabel]:
     row = QHBoxLayout()
     lbl = QLabel(label_text)
     lbl.setFixedWidth(160)
@@ -37,6 +52,8 @@ def _slider_row(label_text: str, min_val: int, max_val: int, value: int,
     val_label.setFixedWidth(40)
     slider.valueChanged.connect(lambda v: val_label.setText(fmt(v)))
     row.addWidget(val_label)
+    if hint:
+        row.addWidget(AiHint(hint))
     return row, slider, val_label
 
 
@@ -50,6 +67,8 @@ class SettingsPage(QWidget):
     dirty_changed = QtSignal(bool)
     terminal_toggled = QtSignal(bool)
     log_toggled = QtSignal(bool)
+    memory_toggled = QtSignal(bool)
+    navigate_to = QtSignal(int)  # stack index to navigate to
 
     def __init__(self, config, assistant, parent=None):
         super().__init__(parent)
@@ -92,11 +111,15 @@ class SettingsPage(QWidget):
         gc.addLayout(_row(t("settings_language"), self._language))
 
         self._hotkey = QLineEdit(config.hotkey)
-        gc.addLayout(_row("Hotkey", self._hotkey))
+        gc.addLayout(_row("Hotkey", self._hotkey, t("ai_hint_hotkey")))
+
+        self._hotkey_suppress = QCheckBox(t("settings_hotkey_suppress"))
+        self._hotkey_suppress.setChecked(getattr(config, "hotkey_suppress", False))
+        gc.addLayout(_check_row(self._hotkey_suppress, t("ai_hint_hotkey_suppress")))
 
         self._overlay_enabled = QCheckBox(t("settings_overlay"))
         self._overlay_enabled.setChecked(config.overlay_enabled)
-        gc.addWidget(self._overlay_enabled)
+        gc.addLayout(_check_row(self._overlay_enabled, t("ai_hint_overlay")))
 
         form.addWidget(general_card)
         form.addSpacing(8)
@@ -112,12 +135,12 @@ class SettingsPage(QWidget):
         self._whisper = QComboBox()
         self._whisper.addItems(["tiny", "base", "small", "medium", "large-v3"])
         self._whisper.setCurrentText(config.whisper_model)
-        ac.addLayout(_row(t("settings_whisper_model"), self._whisper))
+        ac.addLayout(_row(t("settings_whisper_model"), self._whisper, t("ai_hint_whisper_model")))
 
         self._whisper_device = QComboBox()
         self._whisper_device.addItems(["cuda", "cpu"])
         self._whisper_device.setCurrentText(getattr(config, "whisper_device", "cuda"))
-        ac.addLayout(_row(t("settings_whisper_device"), self._whisper_device))
+        ac.addLayout(_row(t("settings_whisper_device"), self._whisper_device, t("ai_hint_whisper_device")))
 
         self._mic = QComboBox()
         self._mic.addItem("Default", None)
@@ -142,9 +165,15 @@ class SettingsPage(QWidget):
         self._es_path = QLineEdit(config.es_path)
         es_row.addWidget(self._es_path)
         browse = QPushButton("...")
-        browse.setFixedWidth(36)
+        browse.setFixedSize(36, 36)
+        browse.setStyleSheet(
+            "QPushButton { background: rgba(255,255,255,10); border: 1px solid rgba(255,255,255,20);"
+            " border-radius: 8px; color: #EAEAEA; font-weight: 700; padding: 0px; }"
+            " QPushButton:hover { background: rgba(124, 92, 252, 40); }"
+        )
         browse.clicked.connect(self._browse_es)
         es_row.addWidget(browse)
+        es_row.addWidget(AiHint(t("ai_hint_es_path")))
         ptc.addLayout(es_row)
 
         tess_row = QHBoxLayout()
@@ -154,9 +183,15 @@ class SettingsPage(QWidget):
         self._tesseract_path = QLineEdit(getattr(config, "tesseract_path", "tesseract"))
         tess_row.addWidget(self._tesseract_path)
         tess_browse = QPushButton("...")
-        tess_browse.setFixedWidth(36)
+        tess_browse.setFixedSize(36, 36)
+        tess_browse.setStyleSheet(
+            "QPushButton { background: rgba(255,255,255,10); border: 1px solid rgba(255,255,255,20);"
+            " border-radius: 8px; color: #EAEAEA; font-weight: 700; padding: 0px; }"
+            " QPushButton:hover { background: rgba(124, 92, 252, 40); }"
+        )
         tess_browse.clicked.connect(self._browse_tesseract)
         tess_row.addWidget(tess_browse)
+        tess_row.addWidget(AiHint(t("ai_hint_tesseract_path")))
         ptc.addLayout(tess_row)
 
         form.addWidget(paths_card)
@@ -172,7 +207,7 @@ class SettingsPage(QWidget):
 
         self._tts_enabled = QCheckBox(t("settings_tts_enable"))
         self._tts_enabled.setChecked(config.tts_enabled)
-        tc.addWidget(self._tts_enabled)
+        tc.addLayout(_check_row(self._tts_enabled, t("ai_hint_tts")))
 
         self._tts_voice = QComboBox()
         from core.voice.tts import TTSEngine
@@ -194,17 +229,20 @@ class SettingsPage(QWidget):
         ds_row, self._dict_silence, self._ds_label = _slider_row(
             t("settings_dictation_silence"), 10, 100,
             int(getattr(config, "dictation_silence_duration", 3.5) * 10),
-            fmt=lambda v: f"{v / 10:.1f}")
+            fmt=lambda v: f"{v / 10:.1f}",
+            hint=t("ai_hint_dict_silence"))
         dc.addLayout(ds_row)
 
         dm_row, self._dict_max, self._dm_label = _slider_row(
             t("settings_dictation_max"), 10, 120,
-            int(getattr(config, "dictation_max_duration", 60)))
+            int(getattr(config, "dictation_max_duration", 60)),
+            hint=t("ai_hint_dict_max"))
         dc.addLayout(dm_row)
 
         dt_row, self._dict_timeout, self._dt_label = _slider_row(
             t("settings_dictation_timeout"), 2, 30,
-            int(getattr(config, "dictation_silence_timeout", 4)))
+            int(getattr(config, "dictation_silence_timeout", 4)),
+            hint=t("ai_hint_dict_timeout"))
         dc.addLayout(dt_row)
 
         form.addWidget(dict_card)
@@ -219,12 +257,56 @@ class SettingsPage(QWidget):
         self._log_enabled = QCheckBox(t("settings_log_enabled"))
         self._log_enabled.setChecked(getattr(config, "log_enabled", False))
         self._log_enabled.toggled.connect(self._check_dirty)
-        ac.addWidget(self._log_enabled)
+
+        log_row = QHBoxLayout()
+        log_row.addWidget(self._log_enabled)
+        log_row.addWidget(AiHint(t("ai_hint_log")))
+        log_row.addStretch()
+        log_go_btn = QPushButton()
+        log_go_btn.setIcon(qta.icon("mdi6.text-box-outline", color="#EAEAEA"))
+        log_go_btn.setToolTip(t("sidebar_log"))
+        log_go_btn.setFixedSize(28, 28)
+        log_go_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        log_go_btn.setStyleSheet("QPushButton { background: rgba(255,255,255,8); border: none; border-radius: 6px; } QPushButton:hover { background: rgba(124, 92, 252, 40); }")
+        log_go_btn.clicked.connect(lambda: self.navigate_to.emit(5))
+        log_row.addWidget(log_go_btn)
+        ac.addLayout(log_row)
 
         self._terminal_enabled = QCheckBox(t("settings_terminal_enabled"))
         self._terminal_enabled.setChecked(getattr(config, "terminal_enabled", False))
         self._terminal_enabled.toggled.connect(self._check_dirty)
-        ac.addWidget(self._terminal_enabled)
+
+        term_row = QHBoxLayout()
+        term_row.addWidget(self._terminal_enabled)
+        term_row.addWidget(AiHint(t("ai_hint_terminal")))
+        term_row.addStretch()
+        term_go_btn = QPushButton()
+        term_go_btn.setIcon(qta.icon("mdi6.console", color="#EAEAEA"))
+        term_go_btn.setToolTip(t("sidebar_terminal"))
+        term_go_btn.setFixedSize(28, 28)
+        term_go_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        term_go_btn.setStyleSheet("QPushButton { background: rgba(255,255,255,8); border: none; border-radius: 6px; } QPushButton:hover { background: rgba(124, 92, 252, 40); }")
+        term_go_btn.clicked.connect(lambda: self.navigate_to.emit(6))
+        term_row.addWidget(term_go_btn)
+        ac.addLayout(term_row)
+
+        self._memory_enabled = QCheckBox(t("settings_memory_enabled"))
+        self._memory_enabled.setChecked(getattr(config, "memory_enabled", False))
+        self._memory_enabled.toggled.connect(self._check_dirty)
+
+        mem_row = QHBoxLayout()
+        mem_row.addWidget(self._memory_enabled)
+        mem_row.addWidget(AiHint(t("ai_hint_memory")))
+        mem_row.addStretch()
+        mem_go_btn = QPushButton()
+        mem_go_btn.setIcon(qta.icon("mdi6.head-lightbulb-outline", color="#EAEAEA"))
+        mem_go_btn.setToolTip(t("sidebar_memory"))
+        mem_go_btn.setFixedSize(28, 28)
+        mem_go_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        mem_go_btn.setStyleSheet("QPushButton { background: rgba(255,255,255,8); border: none; border-radius: 6px; } QPushButton:hover { background: rgba(124, 92, 252, 40); }")
+        mem_go_btn.clicked.connect(lambda: self.navigate_to.emit(4))
+        mem_row.addWidget(mem_go_btn)
+        ac.addLayout(mem_row)
 
         form.addWidget(adv_card)
 
@@ -247,6 +329,7 @@ class SettingsPage(QWidget):
         self._snapshot = self._take_snapshot()
         self._language.currentIndexChanged.connect(self._check_dirty)
         self._hotkey.textChanged.connect(self._check_dirty)
+        self._hotkey_suppress.toggled.connect(self._check_dirty)
         self._overlay_enabled.toggled.connect(self._check_dirty)
         self._whisper.currentTextChanged.connect(self._check_dirty)
         self._whisper_device.currentTextChanged.connect(self._check_dirty)
@@ -264,6 +347,7 @@ class SettingsPage(QWidget):
         return (
             self._language.currentData(),
             self._hotkey.text().strip(),
+            self._hotkey_suppress.isChecked(),
             self._overlay_enabled.isChecked(),
             self._whisper.currentText(),
             self._whisper_device.currentText(),
@@ -277,6 +361,7 @@ class SettingsPage(QWidget):
             self._dict_timeout.value(),
             self._log_enabled.isChecked(),
             self._terminal_enabled.isChecked(),
+            self._memory_enabled.isChecked(),
         )
 
     def _check_dirty(self):
@@ -316,6 +401,7 @@ class SettingsPage(QWidget):
 
         self._config.language = new_language
         self._config.hotkey = self._hotkey.text().strip()
+        self._config.hotkey_suppress = self._hotkey_suppress.isChecked()
         self._config.whisper_model = self._whisper.currentText()
         self._config.whisper_device = self._whisper_device.currentText()
         self._config.mic_device = self._mic.currentData()
@@ -329,14 +415,16 @@ class SettingsPage(QWidget):
         self._config.dictation_silence_timeout = self._dict_timeout.value()
         self._config.log_enabled = self._log_enabled.isChecked()
         self._config.terminal_enabled = self._terminal_enabled.isChecked()
+        self._config.memory_enabled = self._memory_enabled.isChecked()
         self._config.save()
 
         self.log_toggled.emit(self._log_enabled.isChecked())
         self.terminal_toggled.emit(self._terminal_enabled.isChecked())
+        self.memory_toggled.emit(self._memory_enabled.isChecked())
 
         self._assistant.apply_config()
-        if self._config.hotkey != old_hotkey:
-            self._assistant.update_hotkey()
+        # Ri-registra hotkey se cambiato tasto o suppress
+        self._assistant.update_hotkey()
 
         self._snapshot = self._take_snapshot()
         self.dirty_changed.emit(False)

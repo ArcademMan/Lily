@@ -26,8 +26,10 @@ def _load_notes() -> list[dict]:
 
 def _save_notes(notes: list[dict]):
     os.makedirs(os.path.dirname(_NOTES_FILE), exist_ok=True)
-    with open(_NOTES_FILE, "w", encoding="utf-8") as f:
+    tmp = _NOTES_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(notes, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, _NOTES_FILE)
 
 
 class NotesAction(Action):

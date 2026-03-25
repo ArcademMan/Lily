@@ -64,6 +64,7 @@ class Assistant:
         self._pick_event = threading.Event()
         self._pick_choice: int = -1
         self._last_action_ctx: dict = {}
+        self._last_mode: str = ""  # "classify", "agent", "classify+agent"
         self._agent_stop = threading.Event()
         self._stdout_lock = threading.Lock()
 
@@ -110,7 +111,7 @@ class Assistant:
     def _on_model_loaded(self, success: bool, message: str):
         if success:
             self._whisper_model = self._loader.model
-            self._hotkey.register(self.config.hotkey)
+            self._hotkey.register(self.config.hotkey, suppress=getattr(self.config, "hotkey_suppress", False))
             self.state_changed.emit("idle")
         else:
             self.notify.emit(message)
@@ -209,8 +210,7 @@ class Assistant:
             f'Start-Process -FilePath \'{python}\' -ArgumentList \'{script}\' -WorkingDirectory \'{cwd}\'"'
         )
         print(f"[Restart] PID={pid}, lancio wrapper...")
-        from core.utils.env import clean_env
-        subprocess.Popen(restart_cmd, shell=True, env=clean_env())
+        subprocess.Popen(restart_cmd, shell=True)
 
         # Emetti segnale — il bridge Qt lo riceve nel main thread e chiude l'app
         self.notify.emit("__RESTART__")
@@ -260,10 +260,12 @@ class Assistant:
 
         # Agent mode: se abilitato, salta il classify e vai diretto all'agent
         if self.config.agent_enabled:
+            self._last_mode = "agent"
             self._agent_stop.clear()
             self._run_agent_mode(text)
             return
 
+        self._last_mode = "classify"
         provider = self.config.provider
         model = self.config.anthropic_model if provider == "anthropic" else self.config.ollama_model
         print(f"[LLM] Invio a {model} ({provider})...")
@@ -278,6 +280,19 @@ class Assistant:
             intent_type = intent.get("intent", "unknown")
             query = intent.get("query", "")
             self.detail.emit(f"{intent_type}: {query}" if query else intent_type)
+
+            # Classify & Agent: se il classify dice "agent" o "chain", delega all'agent loop
+            if intent_type in ("agent", "chain") and self.config.classify_agent_enabled:
+                self._last_mode = "classify+agent"
+                self._agent_stop.clear()
+                self._run_agent_mode(text)
+                return
+
+            # intent=agent senza agent attivo -> tratta come chat
+            if intent_type == "agent":
+                intent["intent"] = "chat"
+                intent["query"] = text
+                intent_type = "chat"
 
             # Copia ultimo log nella clipboard
             if intent_type == "copy_log":
@@ -374,11 +389,27 @@ class Assistant:
                     return
 
                 print("[Sicurezza] Confermato!")
+                self._last_mode = "classify+confi"
 
             self.detail.emit(f"Esecuzione {intent_type}...")
+            from core.llm.brain import _pick_used
+            _pick_used.flag = False
             result = execute_action(intent, self.config, memory=self._memory, pick_callback=self.request_user_pick, last_action_ctx=self._last_action_ctx)
+            if getattr(_pick_used, "flag", False):
+                self._last_mode += "+pick"
             self.detail.emit("")
             print(f"[Azione] {result}")
+
+            # Fallback: se l'azione fallisce e classify_agent è attivo, rilancia all'agent
+            if self.config.classify_agent_enabled and result and any(
+                kw in result.lower() for kw in ("non trovato", "non riuscit", "errore", "nessun risultato")
+            ):
+                self._last_mode = "classify+agent"
+                print(f"[Fallback] Azione fallita, rilancio all'agent: {result}")
+                self._agent_stop.clear()
+                self._run_agent_mode(text)
+                return
+
             self.result_ready.emit(text, result)
 
             # Aggiorna TTS live se i settings sono cambiati
@@ -510,6 +541,7 @@ class Assistant:
         try:
             # Agent mode: se abilitato, salta il classify
             if self.config.agent_enabled:
+                self._last_mode = "agent"
                 from core.llm.agent import run_agent
                 result, tool_log = run_agent(
                     request=text, config=self.config, memory=self._memory,
@@ -524,11 +556,35 @@ class Assistant:
                     self._memory.add_assistant(result)
                 return result
 
+            self._last_mode = "classify"
             history = self._memory.get_messages()
             intent = classify_intent(text, self.config, history=history)
             intent["_original_text"] = text
             intent_type = intent.get("intent", "unknown")
             print(f"[Chat] Intent: {intent}")
+
+            # Classify & Agent: se il classify dice "agent" o "chain", delega all'agent loop
+            if intent_type in ("agent", "chain") and self.config.classify_agent_enabled:
+                self._last_mode = "classify+agent"
+                from core.llm.agent import run_agent
+                result, tool_log = run_agent(
+                    request=text, config=self.config, memory=self._memory,
+                    execute_fn=lambda d: execute_action(d, self.config, memory=self._memory,
+                                                        pick_callback=self.request_user_pick,
+                                                        confirm_callback=self._confirm_command),
+                )
+                self._memory.add_user(text)
+                if tool_log:
+                    self._memory.add_assistant(f"{result} [tools: {' | '.join(tool_log)}]")
+                else:
+                    self._memory.add_assistant(result)
+                return result
+
+            # intent=agent senza agent attivo -> tratta come chat
+            if intent_type == "agent":
+                intent["intent"] = "chat"
+                intent["query"] = text
+                intent_type = "chat"
 
             # Intent che non hanno senso da chat testuale
             if intent_type in ("dictation",):
@@ -543,12 +599,15 @@ class Assistant:
                 if not steps:
                     if self.config.agent_enabled:
                         from core.llm.agent import run_agent
-                        result = run_agent(
+                        result, tool_log = run_agent(
                             request=text, config=self.config, memory=self._memory,
                             execute_fn=lambda d: execute_action(d, self.config, memory=self._memory, pick_callback=self.request_user_pick),
                         )
                         self._memory.add_user(text)
-                        self._memory.add_assistant(result)
+                        if tool_log:
+                            self._memory.add_assistant(f"{result} [tools: {' | '.join(tool_log)}]")
+                        else:
+                            self._memory.add_assistant(result)
                         return result
                     return t("chain_decompose_fail")
 
@@ -580,6 +639,26 @@ class Assistant:
             # Esecuzione azione (include chat, open_program, ecc.)
             result = execute_action(intent, self.config, memory=self._memory, pick_callback=self.request_user_pick, last_action_ctx=self._last_action_ctx)
             print(f"[Chat] Risultato: {result}")
+
+            # Fallback: se l'azione fallisce e classify_agent è attivo, rilancia all'agent
+            if self.config.classify_agent_enabled and result and any(
+                kw in result.lower() for kw in ("non trovato", "non riuscit", "errore", "nessun risultato")
+            ):
+                self._last_mode = "classify+agent"
+                print(f"[Fallback] Azione fallita, rilancio all'agent: {result}")
+                from core.llm.agent import run_agent
+                result, tool_log = run_agent(
+                    request=text, config=self.config, memory=self._memory,
+                    execute_fn=lambda d: execute_action(d, self.config, memory=self._memory,
+                                                        pick_callback=self.request_user_pick,
+                                                        confirm_callback=self._confirm_command),
+                )
+                self._memory.add_user(text)
+                if tool_log:
+                    self._memory.add_assistant(f"{result} [tools: {' | '.join(tool_log)}]")
+                else:
+                    self._memory.add_assistant(result)
+                return result
 
             # Aggiorna TTS se self_config
             if intent_type == "self_config":
@@ -759,4 +838,4 @@ class Assistant:
         self._memory.max_exchanges = getattr(self.config, "chat_max_history", 5)
 
     def update_hotkey(self):
-        self._hotkey.register(self.config.hotkey)
+        self._hotkey.register(self.config.hotkey, suppress=getattr(self.config, "hotkey_suppress", False))

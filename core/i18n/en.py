@@ -51,7 +51,7 @@ TYPE must be one of:
   "close_explorer" = close all open folders/explorer windows
   "minimize_all" or "show_desktop" = minimize everything / show desktop
   "snap_left" or "snap_right" = move window to left/right half of screen (put program name in query)
-  "move_monitor" = move window to the other monitor/screen (put program name in query)
+  "move_monitor" = move window to the other monitor/screen (put program name in query). If user specifies a monitor number ("screen 1", "first screen", "second monitor"), append the number: "move_monitor 1", "move_monitor 2"
   "minimize" = minimize a specific window (put program name in query)
   "restore" = restore/show a minimized window (put program name in query)
   "close_all" = close all windows
@@ -375,7 +375,7 @@ STRINGS = {
 
     # ── Stop / Restart words ─────────────────────────────────────────────
     "stop_words": {"stop", "lily stop", "shut up", "enough", "be quiet", "quiet"},
-    "restart_words": {"restart", "lily restart", "reboot lily", "restart lily"},
+    "restart_words": {"restart", "lily restart", "reboot lily", "restart lily", "reboot", "lily reboot"},
 
     # ── Dictation keywords ───────────────────────────────────────────────
     "dictation_keywords": {"dictation", "dictation mode"},
@@ -693,6 +693,7 @@ STRINGS = {
     # ── UI: Sidebar ──────────────────────────────────────────────────────
     "sidebar_chat": "Chat",
     "sidebar_llm": "LLM",
+    "sidebar_memory": "Memory",
     "sidebar_settings": "Settings",
     "sidebar_usage": "Usage",
     "sidebar_log": "Log",
@@ -702,7 +703,8 @@ STRINGS = {
     # ── UI: Settings page ────────────────────────────────────────────────
     "settings_title": "Settings",
     "settings_general": "General",
-    "settings_overlay": "Lily Overlay (show icon when minimized)",
+    "settings_hotkey_suppress": "Block hotkey key",
+    "settings_overlay": "Lily Overlay",
     "settings_audio": "Audio",
     "settings_whisper_model": "Whisper Model",
     "settings_whisper_device": "Whisper Device",
@@ -717,11 +719,39 @@ STRINGS = {
     "settings_advanced": "Advanced",
     "settings_log_enabled": "Show log page",
     "settings_terminal_enabled": "Enable integrated terminal",
+    "settings_memory_enabled": "Show memory page",
     "settings_save": "Save",
     "settings_saved": "Saved!",
     "settings_browse_es": "Select es.exe",
     "settings_browse_tesseract": "Select tesseract.exe",
     "settings_exe_filter": "Executables (*.exe)",
+
+    # ── AI Hints (setting tooltips) ──────────────────────────────────────
+    "ai_hint_hotkey": "The key (or combo) to hold\nto activate voice recording.\nExamples: caps lock, ctrl+shift+space, f5",
+    "ai_hint_hotkey_suppress": "When enabled, the hotkey is consumed by Lily\nand not forwarded to other apps.\nUseful if you use a letter or F-key:\nprevents it from being typed repeatedly\nwhile you hold it to record.",
+    "ai_hint_overlay": "Shows a floating icon on screen\nwhen Lily is minimized.\nLets you see the state (idle, listening, processing)\nwithout opening the window.",
+    "ai_hint_whisper_model": "Speech recognition model.\ntiny/base = fast but less accurate\nmedium = good tradeoff\nlarge-v3 = best accuracy, slower.\nLarger models need more VRAM.",
+    "ai_hint_whisper_device": "Device for speech recognition.\ncuda = use NVIDIA GPU (fast)\ncpu = use processor (slower, no GPU needed)",
+    "ai_hint_es_path": "Path to Everything (es.exe).\nUsed to instantly search files and folders\nacross the entire PC.\nDownload from voidtools.com",
+    "ai_hint_tesseract_path": "Path to Tesseract OCR.\nUsed to read text from windows\n(screen_read feature).\nDownload from github.com/tesseract-ocr",
+    "ai_hint_tts": "Lily speaks responses out loud.\nIf disabled, responses appear\nonly as text in the chat.",
+    "ai_hint_dict_silence": "Seconds of silence before dictation\ninserts a pause.\nLow values = more responsive but may\nbreak long sentences.",
+    "ai_hint_dict_max": "Maximum duration of a single\ndictation session in seconds.\nAfter this time, dictation stops\nautomatically.",
+    "ai_hint_dict_timeout": "Seconds of total silence before\ndictation stops automatically.\nDifferent from pause silence: this\nends the entire session.",
+    "ai_hint_log": "Show the Log page in the sidebar.\nUseful for debugging: see all events,\nLLM calls and executed actions.",
+    "ai_hint_terminal": "Enable an integrated PowerShell terminal\ninside Lily. Lily can read output,\nwrite commands and monitor for errors.",
+    "ai_hint_memory": "Show the Memory page in the sidebar.\nLily can save preferences and info\nthat persist across sessions.",
+
+    # AI Hints — LLM page
+    "ai_hint_llm_provider": "The service that processes voice commands.\nollama = local, free, requires installation\nanthropic = Claude (cloud, paid)\nopenai = GPT (cloud, paid)\ngemini = Google (cloud, paid)",
+    "ai_hint_llm_ollama_model": "The local model to use with Ollama.\nLarger models = more accurate but slower.\nMust be already downloaded with 'ollama pull'.",
+    "ai_hint_llm_max_results": "How many search results to send to the LLM\nwhen it needs to pick the right file/program.\nMore results = better choice but more tokens.\nCloud providers only.",
+    "ai_hint_llm_thinking": "The model reasons step by step\nbefore answering.\nSlower but more accurate on complex requests.\nUses more tokens.",
+    "ai_hint_llm_classify_agent": "First classifies the command (fast),\nthen delegates to an autonomous agent\nfor complex or multi-step requests.\nGood speed/power tradeoff.",
+    "ai_hint_llm_agent": "Every command goes straight to the\nautonomous agent that reasons, uses tools\nand shell. More powerful but slower\nand costlier. Mutually exclusive with Classify & Agent.",
+    "ai_hint_llm_num_predict": "Max tokens for command responses\n(classification, pick, actions).\nLow values = faster responses.\nFor simple commands 64-128 is enough.",
+    "ai_hint_llm_chat_predict": "Max tokens for chat responses.\nHigher values = longer, more detailed answers.\nFor normal conversations 256-512 works well.",
+    "ai_hint_llm_history": "How many previous exchanges to include\nin the chat context.\nMore history = more coherent conversations\nbut more tokens consumed per request.",
 
     # ── UI: Welcome wizard ───────────────────────────────────────────────
     "welcome_title": "Welcome to Lily",

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QWidget
 
 _ACCENT = QColor("#7C5CFC")
 _ACCENT_DIM = QColor(124, 92, 252, 60)
-_SIZE = 160
+_SIZE = 200
 
 
 class StateIndicator(QWidget):
@@ -29,7 +29,7 @@ class StateIndicator(QWidget):
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
             "assets", "lily.png",
         )
-        self._icon = self._make_circle_icon(icon_path, 100)
+        self._icon = self._make_circle_icon(icon_path, 130)
 
         # pulse animation (listening)
         self._pulse_anim = QPropertyAnimation(self, b"pulse", self)
@@ -146,7 +146,7 @@ class StateIndicator(QWidget):
         p.setBrush(QColor(30, 30, 45, 200))
         pen = QPen(_ACCENT_DIM, 2)
         p.setPen(pen)
-        inner_r = 50
+        inner_r = 65
         p.drawEllipse(QRectF(cx - inner_r, cy - inner_r, inner_r * 2, inner_r * 2))
 
         # listening: pulsing rings

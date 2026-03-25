@@ -215,9 +215,20 @@ def run_agent(
         print(f"[Agent] Risultato: {result[:200]}")
         results_log.append(f"{tool_name}: {result}")
 
+        # Arricchisci il risultato per l'agent con il path dal context (se presente)
+        agent_result = result
+        try:
+            from core.actions.base import get_action_context
+            ctx = get_action_context()
+            ctx_path = ctx.get("path", "")
+            if ctx_path and ctx_path not in agent_result:
+                agent_result += f" [path: {ctx_path}]"
+        except Exception:
+            pass
+
         # Aggiungi alla conversazione
         messages.append({"role": "assistant", "content": raw})
-        messages.append({"role": "user", "content": f"[Risultato di {tool_name}]: {result}"})
+        messages.append({"role": "user", "content": f"[Risultato di {tool_name}]: {agent_result}"})
 
     # Se siamo usciti dal loop senza final_answer, costruisci un riassunto
     if results_log:

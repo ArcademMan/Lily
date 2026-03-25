@@ -52,7 +52,7 @@ TYPE must be one of:
   "close_explorer" = close all open folders/explorer windows
   "minimize_all" or "show_desktop" = minimize everything / show desktop
   "snap_left" or "snap_right" = move window to left/right half of screen (put program name in query)
-  "move_monitor" = move window to the other monitor/screen (put program name in query)
+  "move_monitor" = move window to the other monitor/screen (put program name in query). If user specifies a monitor number ("schermo 1", "primo schermo", "secondo monitor"), append the number: "move_monitor 1", "move_monitor 2"
   "minimize" = minimize a specific window (put program name in query)
   "restore" = restore/show a minimized window (put program name in query)
   "close_all" = close all windows
@@ -100,6 +100,7 @@ Examples:
 - "uso della CPU" -> {"intent": "system_info", "query": "cpu", "search_terms": [], "parameter": ""}
 - "quanto spazio ho sul disco?" -> {"intent": "system_info", "query": "disco", "search_terms": [], "parameter": ""}
 - "stato del sistema" -> {"intent": "system_info", "query": "", "search_terms": [], "parameter": ""}
+- "leggimi il contenuto del file bananefunghi" -> {"intent": "agent", "query": "leggimi il contenuto del file bananefunghi", "search_terms": [], "parameter": ""}
 - "cos'è la fotosintesi?" -> {"intent": "chat", "query": "cos'è la fotosintesi?", "search_terms": [], "parameter": ""}
 - "dove stanno i salvataggi di Elden Ring?" -> {"intent": "chat", "query": "dove stanno i salvataggi di Elden Ring?", "search_terms": [], "parameter": ""}
 - "trovami il file banane funghi" -> {"intent": "search_files", "query": "banane funghi", "search_terms": ["banane funghi", "bananefunghi"], "parameter": ""}
@@ -107,6 +108,9 @@ Examples:
 - "minimizza tutto" -> {"intent": "window", "query": "", "search_terms": [], "parameter": "minimize_all"}
 - "sposta Discord a sinistra" -> {"intent": "window", "query": "Discord", "search_terms": [], "parameter": "snap_left"}
 - "sposta Chrome sull'altro schermo" -> {"intent": "window", "query": "Chrome", "search_terms": [], "parameter": "move_monitor"}
+- "sposta Discord sullo schermo 1" -> {"intent": "window", "query": "Discord", "search_terms": [], "parameter": "move_monitor 1"}
+- "sposta Discord sul primo schermo" -> {"intent": "window", "query": "Discord", "search_terms": [], "parameter": "move_monitor 1"}
+- "metti Chrome sul secondo monitor" -> {"intent": "window", "query": "Chrome", "search_terms": [], "parameter": "move_monitor 2"}
 - "ripristina Discord" -> {"intent": "window", "query": "Discord", "search_terms": [], "parameter": "restore"}
 - "sposta Discord più in basso" -> {"intent": "window", "query": "Discord", "search_terms": [], "parameter": "nudge_down"}
 - "leggimi l'ultimo messaggio su WhatsApp" -> {"intent": "screen_read", "query": "WhatsApp", "search_terms": [], "parameter": "ultimo messaggio"}
@@ -151,7 +155,7 @@ screenshot: capture screen
 timer: parameter=duration(5m/1h/30s)/"cancel"/"lista". Reminders: query=message,parameter=duration. Recurring: parameter="recurring DURATION"
 volume: parameter=up/down/mute
 media: parameter=play_pause/next/previous/stop
-window: parameter=close_explorer/minimize_all/show_desktop/snap_left/snap_right/move_monitor/minimize/restore/close_all/nudge_up/nudge_down/nudge_left/nudge_right(append pixels). query=program name when needed
+window: parameter=close_explorer/minimize_all/show_desktop/snap_left/snap_right/move_monitor/move_monitor N(specific monitor)/minimize/restore/close_all/nudge_up/nudge_down/nudge_left/nudge_right(append pixels). query=program name when needed. "schermo 1"/"primo schermo"->move_monitor 1
 screen_read: OCR window. query=window, parameter=what to look for
 terminal_read: read Lily's integrated terminal output. parameter=what to look for (optional). Keywords: "leggi il terminale", "cosa c'è sul terminale", "output del terminale"
 type_in: go to window+type. query=window, parameter=text VERBATIM. "invia" anywhere->append " e invia" at END. No text after app->parameter="dictate"
@@ -162,7 +166,7 @@ notes: DEFAULT=save(query=note text). parameter="leggi" to read. parameter="canc
 system_info: query=cpu/ram/disco/processi
 copy_log: copy last output to clipboard
 save_memory: persistent memory. parameter="save_last"(mettilo in memoria/salvalo), "leggi"(cosa ricordi?), "dimentica"+query(dimentica X), "svuota"(svuota la memoria). Free text: query=text
-chain: 2+ DIFFERENT actions in one sentence(connectors: e/poi/dopo). query=full text
+agent: needs reasoning, multi-step logic, system exploration, or no direct intent fits (quante cartelle, confronta, analizza, cerca e poi fai, 2+ different actions). query=full text
 chat: questions, conversation, anything else
 unknown: unintelligible/empty input only
 
@@ -173,6 +177,9 @@ Examples:
 "cerca su Google come installare mod"->{"intent":"open_website","query":"come installare mod"}
 "metti pausa"->{"intent":"media","parameter":"play_pause"}
 "sposta Discord a sinistra"->{"intent":"window","query":"Discord","parameter":"snap_left"}
+"sposta Discord sullo schermo 1"->{"intent":"window","query":"Discord","parameter":"move_monitor 1"}
+"metti Chrome sul secondo monitor"->{"intent":"window","query":"Chrome","parameter":"move_monitor 2"}
+"leggimi il contenuto del file bananefunghi"->{"intent":"agent","query":"leggimi il contenuto del file bananefunghi"}
 "leggimi l'ultimo messaggio su WhatsApp"->{"intent":"screen_read","query":"WhatsApp","parameter":"ultimo messaggio"}
 "vai sul terminale e scrivi ciao e invia"->{"intent":"type_in","query":"terminale","parameter":"ciao e invia"}
 "invia su WhatsApp"->{"intent":"type_in","query":"WhatsApp","parameter":"dictate"}
@@ -181,7 +188,10 @@ Examples:
 "ogni ora ricordami di bere"->{"intent":"timer","query":"bere","parameter":"recurring 1h"}
 "quanta RAM sto usando?"->{"intent":"system_info","query":"ram"}
 "prendi nota comprare il latte"->{"intent":"notes","query":"comprare il latte"}
-"leggi le mie note"->{"intent":"notes","parameter":"leggi"}""" + _LILY_PATHS
+"leggi le mie note"->{"intent":"notes","parameter":"leggi"}
+"quante cartelle ho sul desktop?"->{"intent":"agent","query":"quante cartelle ho sul desktop?"}
+"apri Chrome e cerca lofi music"->{"intent":"agent","query":"apri Chrome e cerca lofi music"}
+"chiudi tutto e apri Discord"->{"intent":"agent","query":"chiudi tutto e apri Discord"}""" + _LILY_PATHS
 
 
 def _pick_ollama() -> str:
@@ -383,7 +393,7 @@ STRINGS = {
 
     # ── Stop / Restart words ─────────────────────────────────────────────
     "stop_words": {"stop", "lily stop", "fermati", "basta", "zitto", "zitta", "taci"},
-    "restart_words": {"riavviati", "lily riavviati", "restart", "riavvia lily", "riavvio", "sparati", "lily sparati"},
+    "restart_words": {"riavviati", "lily riavviati", "restart", "riavvia lily", "riavvio", "sparati", "lily sparati", "reboot", "lily reboot"},
 
     # ── Dictation keywords ───────────────────────────────────────────────
     "dictation_keywords": {"dettatura", "dittatura", "dettaura", "detta tura"},
@@ -701,6 +711,7 @@ STRINGS = {
     # ── UI: Sidebar ──────────────────────────────────────────────────────
     "sidebar_chat": "Chat",
     "sidebar_llm": "LLM",
+    "sidebar_memory": "Memoria",
     "sidebar_settings": "Impostazioni",
     "sidebar_usage": "Usage",
     "sidebar_log": "Log",
@@ -710,7 +721,8 @@ STRINGS = {
     # ── UI: Settings page ────────────────────────────────────────────────
     "settings_title": "Impostazioni",
     "settings_general": "Generale",
-    "settings_overlay": "Lily Overlay (mostra icona quando minimizzata)",
+    "settings_hotkey_suppress": "Blocca tasto hotkey",
+    "settings_overlay": "Lily Overlay",
     "settings_audio": "Audio",
     "settings_whisper_model": "Modello Whisper",
     "settings_whisper_device": "Whisper Device",
@@ -725,11 +737,39 @@ STRINGS = {
     "settings_advanced": "Avanzate",
     "settings_log_enabled": "Mostra pagina log",
     "settings_terminal_enabled": "Abilita terminale integrato",
+    "settings_memory_enabled": "Mostra pagina memoria",
     "settings_save": "Salva",
     "settings_saved": "Salvato!",
     "settings_browse_es": "Seleziona es.exe",
     "settings_browse_tesseract": "Seleziona tesseract.exe",
     "settings_exe_filter": "Eseguibili (*.exe)",
+
+    # ── AI Hints (tooltip per settings) ──────────────────────────────────
+    "ai_hint_hotkey": "Il tasto (o combinazione) da tenere premuto\nper attivare la registrazione vocale.\nEsempi: caps lock, ctrl+shift+space, f5",
+    "ai_hint_hotkey_suppress": "Se attivo, il tasto hotkey viene consumato da Lily\ne non arriva alle altre app.\nUtile se usi un tasto come F o una lettera:\nevita che venga scritto ripetutamente\nmentre tieni premuto per registrare.",
+    "ai_hint_overlay": "Mostra un'icona flottante sullo schermo\nquando Lily e minimizzata.\nPermette di vedere lo stato (idle, ascolto, elaborazione)\nsenza aprire la finestra.",
+    "ai_hint_whisper_model": "Modello di riconoscimento vocale.\ntiny/base = veloce ma meno preciso\nmedium = buon compromesso\nlarge-v3 = massima precisione, piu lento.\nRichiede piu VRAM per modelli grandi.",
+    "ai_hint_whisper_device": "Dispositivo per il riconoscimento vocale.\ncuda = usa la GPU NVIDIA (veloce)\ncpu = usa il processore (piu lento, no GPU richiesta)",
+    "ai_hint_es_path": "Percorso di Everything (es.exe).\nUsato per cercare file e cartelle\nistantaneamente su tutto il PC.\nScaricabile da voidtools.com",
+    "ai_hint_tesseract_path": "Percorso di Tesseract OCR.\nUsato per leggere il testo dalle finestre\n(funzione screen_read).\nScaricabile da github.com/tesseract-ocr",
+    "ai_hint_tts": "Lily parla le risposte ad alta voce.\nSe disattivato, le risposte appaiono\nsolo come testo nella chat.",
+    "ai_hint_dict_silence": "Dopo quanti secondi di silenzio\nla dettatura inserisce una pausa.\nValori bassi = piu reattivo ma rischia\ndi spezzare frasi lunghe.",
+    "ai_hint_dict_max": "Durata massima di una singola sessione\ndi dettatura in secondi.\nDopo questo tempo la dettatura si ferma\nautomaticamente.",
+    "ai_hint_dict_timeout": "Dopo quanti secondi di silenzio totale\nla dettatura si ferma automaticamente.\nDiverso dal silenzio pausa: questo\nchiude proprio la sessione.",
+    "ai_hint_log": "Mostra la pagina Log nella sidebar.\nUtile per debug: vedi tutti gli eventi,\nle chiamate LLM e le azioni eseguite.",
+    "ai_hint_terminal": "Abilita un terminale PowerShell integrato\ndentro Lily. Lily puo leggere l'output,\nscrivere comandi e monitorare errori.",
+    "ai_hint_memory": "Mostra la pagina Memoria nella sidebar.\nLily puo salvare preferenze e informazioni\npersistenti tra le sessioni.",
+
+    # AI Hints — LLM page
+    "ai_hint_llm_provider": "Il servizio che elabora i comandi vocali.\nollama = locale, gratuito, richiede installazione\nanthropic = Claude (cloud, a pagamento)\nopenai = GPT (cloud, a pagamento)\ngemini = Google (cloud, a pagamento)",
+    "ai_hint_llm_ollama_model": "Il modello locale da usare con Ollama.\nModelli piu grandi = piu precisi ma piu lenti.\nDeve essere gia scaricato con 'ollama pull'.",
+    "ai_hint_llm_max_results": "Quanti risultati di ricerca inviare al LLM\nquando deve scegliere il file/programma giusto.\nPiu risultati = scelta migliore ma piu token usati.\nSolo per provider cloud.",
+    "ai_hint_llm_thinking": "Il modello ragiona passo dopo passo\nprima di rispondere.\nPiu lento ma piu preciso su richieste complesse.\nUsa piu token.",
+    "ai_hint_llm_classify_agent": "Prima classifica il comando (veloce),\npoi se serve delega a un agente autonomo\nper richieste complesse o multi-step.\nBuon compromesso velocita/potenza.",
+    "ai_hint_llm_agent": "Ogni comando va diretto all'agente autonomo\nche ragiona, usa tool e shell.\nPiu potente ma piu lento e costoso.\nMutuamente esclusivo con Classify & Agent.",
+    "ai_hint_llm_num_predict": "Token massimi per le risposte ai comandi\n(classificazione, pick, azioni).\nValori bassi = risposte piu veloci.\nPer comandi semplici bastano 64-128.",
+    "ai_hint_llm_chat_predict": "Token massimi per le risposte in chat.\nValori alti = risposte piu lunghe e dettagliate.\nPer conversazioni normali 256-512 va bene.",
+    "ai_hint_llm_history": "Quanti scambi precedenti includere\nnel contesto della chat.\nPiu storico = conversazioni piu coerenti\nma piu token consumati per ogni richiesta.",
 
     # ── UI: Welcome wizard ───────────────────────────────────────────────
     "welcome_title": "Benvenuto in Lily",

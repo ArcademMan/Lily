@@ -12,14 +12,17 @@ from core import terminal_buffer
 
 # Processo chiede conferma
 _CONFIRM_PATTERNS = [
-    r"(?i)\ballow\b.*\?",
-    r"(?i)do you want to proceed",
-    r"(?i)\(y/n\)",
-    r"(?i)\(Y/n\)",
-    r"(?i)\(yes/no\)",
-    r"(?i)approve this",
-    r"(?i)permission to",
-    r"(?i)would you like to",
+    r"(?i)\ballow\b",
+    r"(?i)do\s*you\s*want\s*to",
+    r"\(y/n\)",
+    r"\(Y/n\)",
+    r"\(yes/no\)",
+    r"(?i)approve\s*this",
+    r"(?i)permission\s*to",
+    r"(?i)would\s*you\s*like\s*to",
+    r"(?i)proceed.*\?",
+    r"(?i)Doyouwant",  # Claude Code TUI (spazi strippati)
+    r"(?i)Esctocancel",  # Claude Code TUI footer
 ]
 
 # Processo ha finito (parola chiave concordata)
@@ -53,6 +56,7 @@ class TerminalWatcher:
     on_confirm = Signal()   # (tab_label: str, line: str)
     on_done = Signal()      # (tab_label: str)
     on_error = Signal()     # (tab_label: str, line: str)
+    on_state_changed = Signal()  # (tab_id: str, watching: bool)
 
     _instance = None
     _cls_lock = threading.Lock()
@@ -74,9 +78,9 @@ class TerminalWatcher:
 
     def watch(self, tab_id: str):
         """Inizia a monitorare un tab."""
-        initial_lines = terminal_buffer.get_line_count(tab_id)
-        self._tabs[tab_id] = _TabState(initial_lines)
-        print(f"[Watcher] Monitoring tab: {tab_id} ({terminal_buffer.get_label(tab_id)}) initial_lines={initial_lines}")
+        initial_total = terminal_buffer.get_total_lines(tab_id)
+        self._tabs[tab_id] = _TabState(initial_total)
+        print(f"[Watcher] Monitoring tab: {tab_id} ({terminal_buffer.get_label(tab_id)}) initial_total={initial_total}")
         if not self._thread or not self._thread.is_alive():
             self._stop.clear()
             self._thread = threading.Thread(target=self._poll_loop, daemon=True)
@@ -84,6 +88,7 @@ class TerminalWatcher:
             print(f"[Watcher] Thread avviato")
         else:
             print(f"[Watcher] Thread gia' attivo")
+        self.on_state_changed.emit(tab_id, True)
 
     def unwatch(self, tab_id: str):
         """Smetti di monitorare un tab."""
@@ -91,6 +96,7 @@ class TerminalWatcher:
         if not self._tabs:
             self._stop.set()
         print(f"[Watcher] Stop monitoring tab: {tab_id}")
+        self.on_state_changed.emit(tab_id, False)
 
     def unwatch_all(self):
         self._tabs.clear()
@@ -114,16 +120,19 @@ class TerminalWatcher:
         if not state:
             return
 
-        current_count = terminal_buffer.get_line_count(tab_id)
-        if current_count <= state.last_seen:
+        # Flusha chunk parziali rimasti (prompt senza newline)
+        terminal_buffer.flush_pending(tab_id)
+
+        total = terminal_buffer.get_total_lines(tab_id)
+        if total <= state.last_seen:
             return
 
-        print(f"[Watcher] {tab_id}: {current_count - state.last_seen} nuove righe (totale: {current_count})")
+        new_count = total - state.last_seen
+        print(f"[Watcher] {tab_id}: {new_count} nuove righe (totale: {total})")
 
-        text = terminal_buffer.get_text(tab_id=tab_id, max_lines=current_count)
-        lines = text.splitlines()
-        new_lines = lines[state.last_seen:]
-        state.last_seen = current_count
+        text = terminal_buffer.get_text(tab_id=tab_id, max_lines=new_count)
+        new_lines = text.splitlines()
+        state.last_seen = total
 
         if not new_lines:
             return

@@ -44,6 +44,9 @@ except Exception:
 datas = [
     ('assets', 'assets'),
     ('es.exe', '.'),
+    # winpty: agent e console necessari per il backend legacy (ConPTY crasha in frozen)
+    (os.path.join(ROOT, '.venv', 'Lib', 'site-packages', 'winpty', 'winpty-agent.exe'), 'winpty'),
+    (os.path.join(ROOT, '.venv', 'Lib', 'site-packages', 'winpty', 'OpenConsole.exe'), 'winpty'),
 ]
 
 # ── Binari CUDA (lib/) ────────────────────────────────────────────────────────

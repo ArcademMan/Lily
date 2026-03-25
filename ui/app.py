@@ -3,6 +3,19 @@
 import sys
 import os
 
+# ── Pulizia PATH PyInstaller ────────────────────────────────────
+# PyInstaller aggiunge _internal/ al PATH per trovare le DLL bundled.
+# Una volta che l'app è caricata, queste DLL sono già in memoria.
+# Rimuoviamo _internal dal PATH così i processi figli (PowerShell, ecc.)
+# non caricano versioni sbagliate delle DLL di sistema.
+if getattr(sys, "frozen", False):
+    _meipass = getattr(sys, "_MEIPASS", "").lower()
+    if _meipass:
+        _parts = os.environ.get("PATH", "").split(";")
+        _clean = [p for p in _parts if p.strip().lower().rstrip("\\") != _meipass
+                  and not p.strip().lower().startswith(_meipass + "\\")]
+        os.environ["PATH"] = ";".join(_clean)
+
 from PySide6.QtWidgets import QApplication
 
 from config import Config

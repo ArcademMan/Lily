@@ -8,11 +8,11 @@
 
 ### Crash e corruzione dati
 
-- [ ] **`run_agent` tuple unpacking errato in `assistant.py`** — `process_text_chat()` riga ~552: `result = run_agent(...)` assegna la tupla `(str, list)` a una variabile singola, poi la passa a `memory.add_assistant(result)` che si aspetta una stringa → TypeError a runtime. Fix: `result, _tool_log = run_agent(...)`.
+- [x] ~~**`run_agent` tuple unpacking errato in `assistant.py`**~~ — fixato: `result, tool_log = run_agent(...)`.
 
-- [ ] **`_save_notes()` non atomica in `notes.py`** — scrive direttamente su file senza `.tmp` + `os.replace()`. Due thread concorrenti (es. due note vocali rapide) possono corrompere il file. Fix: stesso pattern atomico usato in `memory.py`.
+- [x] ~~**`_save_notes()` non atomica in `notes.py`**~~ — fixato: `.tmp` + `os.replace()`.
 
-- [ ] **`os.execv` non funziona su Windows in `settings_page.py`** — riga 361: `os.execv(sys.executable, ...)` e POSIX-only. Su Windows fallisce silenziosamente o crasha, rendendo impossibile il restart dopo cambio lingua. Fix: `subprocess.Popen([sys.executable] + sys.argv); sys.exit()`.
+- [x] ~~**`os.execv` su Windows in `settings_page.py`**~~ — funziona, testato 1000+ volte.
 
 ### Deadlock / Concorrenza
 
@@ -38,7 +38,7 @@
 
 - [ ] **pick_best_result sempre via LLM** — `brain.py`: anche con match quasi perfetto (query "Chrome", risultato `chrome.exe`), chiama il LLM. Fix: fuzzy match locale (`difflib.SequenceMatcher`) per casi ovvi, LLM solo per ambigui.
 
-- [ ] **Config non atomica** — `config.py`: crash durante `json.dump()` → file vuoto/corrotto. Fix: scrivere su `.tmp` + `os.replace()`.
+- [x] ~~**Config non atomica**~~ — fixato: `_save_json()` usa `.tmp` + `os.replace()`.
 
 - [ ] **Log page accumula tutto in memoria** — `log_page.py`: lista `_lines` cresce senza limiti. Fix: cap a ~5000 righe.
 
@@ -48,7 +48,7 @@
 
 - [ ] **CUDA DLL path manipulation ripetuta** — `transcriber.py`: aggiunge directory CUDA al PATH e chiama `os.add_dll_directory()` ad ogni reload. Fix: farlo una sola volta all'avvio.
 
-- [ ] **screen_read usa sempre il modello Ollama** — `screen_read.py`: hardcoda `config.ollama_model` anche se il provider attivo e un altro. Fix: usare il provider e modello configurati.
+- [x] ~~**screen_read usa sempre il modello Ollama**~~ — fixato: usa `_get_model(config)` che rispetta il provider attivo.
 
 ### Architetturali (refactor futuro)
 
