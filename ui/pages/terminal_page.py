@@ -94,6 +94,25 @@ function initTerminal() {
     term.open(document.getElementById('terminal'));
     fitAddon.fit();
 
+    // Ctrl+C (copia se c'e selezione) e Ctrl+V (incolla)
+    term.attachCustomKeyEventHandler(function(ev) {
+        if (ev.ctrlKey && ev.key === 'c' && ev.type === 'keydown') {
+            var sel = term.getSelection();
+            if (sel) {
+                navigator.clipboard.writeText(sel);
+                term.clearSelection();
+                return false;  // non mandare al PTY
+            }
+        }
+        if (ev.ctrlKey && ev.key === 'v' && ev.type === 'keydown') {
+            navigator.clipboard.readText().then(function(text) {
+                if (text && bridge) bridge.on_input(text);
+            });
+            return false;
+        }
+        return true;
+    });
+
     term.onData(function(data) {
         if (bridge) bridge.on_input(data);
     });
