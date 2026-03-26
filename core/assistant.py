@@ -10,6 +10,7 @@ from core.signal import Signal
 from core.voice.hotkey import HotkeyManager
 from core.voice.listener import ListenWorker
 from core.voice.transcriber import WhisperLoader
+from core.voice.wake_word import WakeWordListener
 from core.llm.brain import classify_intent, decompose_chain
 from core.actions import execute_action
 from core.voice.tts import TTSEngine
@@ -104,6 +105,9 @@ class Assistant:
         self._hotkey.pressed.connect(self._start_listening)
         self._hotkey.released.connect(self._stop_listening)
 
+        # Wake word
+        self._wake_word: WakeWordListener | None = None
+
         # Load whisper model in background
         self.state_changed.emit("loading")
         self._loader = WhisperLoader(config.whisper_model, config.whisper_device)
@@ -114,6 +118,7 @@ class Assistant:
         if success:
             self._whisper_model = self._loader.model
             self._hotkey.register(self.config.hotkey, suppress=getattr(self.config, "hotkey_suppress", False))
+            self._start_wake_word()
             self.state_changed.emit("idle")
         else:
             self.notify.emit(message)
@@ -850,3 +855,84 @@ class Assistant:
 
     def update_hotkey(self):
         self._hotkey.register(self.config.hotkey, suppress=getattr(self.config, "hotkey_suppress", False))
+
+    # ── Wake word ─────────────────────────────────────────────────────
+
+    def _start_wake_word(self):
+        """Avvia il wake word listener se configurato."""
+        if not getattr(self.config, "wake_word_enabled", False):
+            return
+        if self._wake_word and self._wake_word.is_running:
+            self._wake_word.stop()
+        keyword = getattr(self.config, "wake_word_keyword", "lily")
+        sensitivity = getattr(self.config, "wake_word_sensitivity", 0.5)
+        self._wake_word = WakeWordListener(
+            wake_word=keyword,
+            mic_device=self.config.mic_device,
+            whisper_model=self._whisper_model,
+            on_status=lambda msg: self.notify.emit(msg),
+        )
+        self._wake_word.detected.connect(self._on_wake_word)
+        self._wake_word.start()
+
+    def _stop_wake_word(self):
+        if self._wake_word:
+            self._wake_word.stop()
+            self._wake_word = None
+
+    def _on_wake_word(self):
+        """Chiamato quando il wake word viene rilevato."""
+        with self._busy_lock:
+            if self._busy:
+                return
+            self._busy = True
+
+        if self._wake_word:
+            self._wake_word.pause()
+
+        play_beep()
+        self.state_changed.emit("listening")
+        threading.Thread(target=self._wake_word_record, daemon=True).start()
+
+    def _wake_word_record(self):
+        """Registra dopo wake word, trascrive e processa."""
+        from core.utils.audio import record_until_silence
+        from core.voice.transcriber import transcribe
+        try:
+            print("[WakeWord] Registrazione dopo wake word...")
+            audio = record_until_silence(
+                device=self.config.mic_device,
+                timeout=getattr(self.config, "dictation_max_duration", 60),
+                silence_duration=getattr(self.config, "dictation_silence_timeout", 8),
+                speech_threshold=0.005,
+            )
+            if audio is None or len(audio) < 16000 * 0.3:
+                print("[WakeWord] Nessun audio rilevato")
+                self._busy = False
+                self.state_changed.emit("idle")
+                if self._wake_word:
+                    self._wake_word.resume()
+                return
+
+            self.state_changed.emit("transcribing")
+            text = transcribe(self._whisper_model, audio, self.config.whisper_model)
+            if text:
+                self._processing = True
+                print(f"[Whisper] Trascrizione: {text}")
+                self.state_changed.emit("processing")
+                self._process(text)
+            else:
+                self._busy = False
+                self.state_changed.emit("idle")
+        except Exception as e:
+            print(f"[WakeWord] Errore: {e}")
+            self._busy = False
+            self.state_changed.emit("idle")
+        finally:
+            if self._wake_word:
+                self._wake_word.resume()
+
+    def update_wake_word(self):
+        """Riavvia il wake word listener con le nuove impostazioni."""
+        self._stop_wake_word()
+        self._start_wake_word()

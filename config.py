@@ -54,6 +54,9 @@ LILY_DEFAULTS = {
     "terminal_enabled": False,
     "log_enabled": False,
     "hotkey_suppress": False,
+    "wake_word_enabled": False,
+    "wake_word_keyword": "lily",
+    "wake_word_sensitivity": 0.5,
 }
 
 ALL_DEFAULTS = {**USER_DEFAULTS, **LILY_DEFAULTS}

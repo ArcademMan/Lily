@@ -60,7 +60,7 @@ TYPE must be one of:
   Keywords: "chiudi le cartelle", "minimizza tutto", "mostra desktop", "sposta a sinistra/destra", "sposta sull'altro schermo", "ripristina", "minimizza", "più in alto", "più in basso", "più a sinistra", "più a destra"
 - screen_read: user wants to READ/SEE what's on a window or screen. Captures the window and reads the text via OCR. query = window/program name. parameter = what to look for or question about the content. Keywords: "leggi", "cosa c'è scritto", "leggimi", "cosa vedi su", "ultimo messaggio", "cosa dice"
 - terminal_read: user wants to READ the output of Lily's INTEGRATED TERMINAL (the terminal tab inside Lily). No need for a window name. parameter = what to look for (optional). Keywords: "leggi il terminale", "cosa c'è sul terminale", "output del terminale", "cosa dice il terminale". IMPORTANT: use this ONLY when the user refers to Lily's own terminal, NOT external terminal windows.
-- terminal_write: user wants to WRITE/SEND text in Lily's INTEGRATED TERMINAL. parameter = text to write VERBATIM. NEVER append "e invia" — enter is pressed automatically. Keywords: "scrivi sul terminale", "scrivi nel terminale", "invia sul terminale", "invia nel terminale", "manda al terminale". IMPORTANT: when user says "terminale" and wants to WRITE there, ALWAYS use terminal_write NOT type_in.
+- terminal_write: user wants to WRITE/SEND text in Lily's INTEGRATED TERMINAL. parameter = ALL text after "scrivi sul terminale"/"invia sul terminale" VERBATIM, copy the ENTIRE message exactly as the user said it, do NOT cut or filter any part. NEVER append "e invia" — enter is pressed automatically. Keywords: "scrivi sul terminale", "scrivi nel terminale", "invia sul terminale", "invia nel terminale", "manda al terminale". IMPORTANT: when user says "terminale" and wants to WRITE there, ALWAYS use terminal_write NOT type_in.
 - type_in: user wants to GO TO a specific EXTERNAL window and optionally TYPE text there. query = window/program name to focus. parameter = the text to type. If the user wants to SEND/SUBMIT the message, ALWAYS append " e invia" at the END of parameter. Keywords: "vai su", "vai sul", "scrivi su", "scrivi nel", "scrivi a", "digita su", "invia a/su". NEVER use type_in with query="terminale" — use terminal_write instead.
   IMPORTANT for type_in: when user says "invia" or "e invia" ANYWHERE in the sentence, put " e invia" at the END of parameter.
   CRITICAL: "invia X", "invia su X", "invia a X" at the START of a sentence = ALWAYS type_in, NEVER chain, NEVER chat. The app name follows "invia" directly or after "su/a".
@@ -121,6 +121,7 @@ Examples:
 - "cosa dice il terminale, ci sono errori?" -> {"intent": "terminal_read", "query": "", "search_terms": [], "parameter": "errori"}
 - "scrivi sul terminale ciao" -> {"intent": "terminal_write", "query": "", "search_terms": [], "parameter": "ciao"}
 - "invia sul terminale ok diciamo quindi" -> {"intent": "terminal_write", "query": "", "search_terms": [], "parameter": "ok diciamo quindi"}
+- "scrivi sul terminale si hai ragione funziona. Allora dobbiamo aggiungere un tasto" -> {"intent": "terminal_write", "query": "", "search_terms": [], "parameter": "si hai ragione funziona. Allora dobbiamo aggiungere un tasto"}
 - "vai sul terminale e scrivi ciao e invia" -> {"intent": "terminal_write", "query": "", "search_terms": [], "parameter": "ciao"}
 - "vai su Sublime" -> {"intent": "type_in", "query": "Sublime", "search_terms": [], "parameter": ""}
 - "invia a WhatsApp questo messaggio è da Lily" -> {"intent": "type_in", "query": "WhatsApp", "search_terms": [], "parameter": "questo messaggio è da Lily e invia"}
@@ -161,7 +162,7 @@ media: parameter=play_pause/next/previous/stop
 window: parameter=close_explorer/minimize_all/show_desktop/snap_left/snap_right/move_monitor/move_monitor N(specific monitor)/minimize/restore/close_all/nudge_up/nudge_down/nudge_left/nudge_right(append pixels). query=program name when needed. "schermo 1"/"primo schermo"->move_monitor 1
 screen_read: OCR window. query=window, parameter=what to look for
 terminal_read: read Lily's integrated terminal output. parameter=what to look for (optional). Keywords: "leggi il terminale", "cosa c'è sul terminale", "output del terminale"
-terminal_write: write/send text in Lily's integrated terminal. parameter=text VERBATIM, NEVER append "e invia". Keywords: "scrivi sul terminale", "invia sul terminale". ALWAYS use this when user says "terminale" + write, NEVER type_in.
+terminal_write: write/send text in Lily's integrated terminal. parameter=ALL text after trigger VERBATIM, copy ENTIRE message, do NOT cut/filter. NEVER append "e invia". Keywords: "scrivi sul terminale", "invia sul terminale". ALWAYS use this when user says "terminale" + write, NEVER type_in.
 type_in: go to EXTERNAL window+type. query=window, parameter=text VERBATIM. "invia" anywhere->append " e invia" at END. No text after app->parameter="dictate". NEVER use with query="terminale".
 time: current time/date
 dictation: voice typing. "scrivi [TEXT]"->query=TEXT
@@ -743,6 +744,9 @@ STRINGS = {
     "settings_log_enabled": "Mostra pagina log",
     "settings_terminal_enabled": "Abilita terminale integrato",
     "settings_memory_enabled": "Mostra pagina memoria",
+    "settings_wake_word_enabled": "Abilita Wake Word",
+    "settings_wake_keyword": "Parola chiave",
+    "settings_wake_sensitivity": "Sensibilità",
     "settings_save": "Salva",
     "settings_saved": "Salvato!",
     "settings_browse_es": "Seleziona es.exe",
@@ -752,6 +756,8 @@ STRINGS = {
     # ── AI Hints (tooltip per settings) ──────────────────────────────────
     "ai_hint_hotkey": "Il tasto (o combinazione) da tenere premuto\nper attivare la registrazione vocale.\nEsempi: caps lock, ctrl+shift+space, f5",
     "ai_hint_hotkey_suppress": "Se attivo, il tasto hotkey viene consumato da Lily\ne non arriva alle altre app.\nUtile se usi un tasto come F o una lettera:\nevita che venga scritto ripetutamente\nmentre tieni premuto per registrare.",
+    "ai_hint_wake_word": "Attiva il riconoscimento vocale senza hotkey.\nDici la parola chiave e Lily inizia ad ascoltare.\nUsa Silero VAD + Whisper tiny in background.",
+    "ai_hint_wake_keyword": "La parola che attiva Lily.\nQuando viene rilevata voce, trascrive\nun breve frammento e controlla se inizia\ncon questa parola.",
     "ai_hint_overlay": "Mostra un'icona flottante sullo schermo\nquando Lily e minimizzata.\nPermette di vedere lo stato (idle, ascolto, elaborazione)\nsenza aprire la finestra.",
     "ai_hint_whisper_model": "Modello di riconoscimento vocale.\ntiny/base = veloce ma meno preciso\nmedium = buon compromesso\nlarge-v3 = massima precisione, piu lento.\nRichiede piu VRAM per modelli grandi.",
     "ai_hint_whisper_device": "Dispositivo per il riconoscimento vocale.\ncuda = usa la GPU NVIDIA (veloce)\ncpu = usa il processore (piu lento, no GPU richiesta)",

@@ -59,7 +59,7 @@ TYPE must be one of:
   Keywords: "close folders", "minimize all", "show desktop", "snap left/right", "move to other screen", "restore", "minimize"
 - screen_read: user wants to READ/SEE what's on a window or screen. Captures the window and reads the text via OCR. query = window/program name. parameter = what to look for or question about the content. Keywords: "read", "what does it say", "read me", "what's on", "last message"
 - terminal_read: user wants to READ the output of Lily's INTEGRATED TERMINAL (the terminal tab inside Lily). No need for a window name. parameter = what to look for (optional). Keywords: "read the terminal", "what's on the terminal", "terminal output", "what does the terminal say". IMPORTANT: use this ONLY when the user refers to Lily's own terminal, NOT external terminal windows.
-- terminal_write: user wants to WRITE/SEND text in Lily's INTEGRATED TERMINAL. parameter = text to write VERBATIM. NEVER append "and send" — enter is pressed automatically. Keywords: "write in the terminal", "send to the terminal", "type in the terminal". IMPORTANT: when user says "terminal" and wants to WRITE there, ALWAYS use terminal_write NOT type_in.
+- terminal_write: user wants to WRITE/SEND text in Lily's INTEGRATED TERMINAL. parameter = ALL text after trigger VERBATIM, copy the ENTIRE message exactly as the user said it, do NOT cut or filter any part. NEVER append "and send" — enter is pressed automatically. Keywords: "write in the terminal", "send to the terminal", "type in the terminal". IMPORTANT: when user says "terminal" and wants to WRITE there, ALWAYS use terminal_write NOT type_in.
 - type_in: user wants to GO TO a specific EXTERNAL window and optionally TYPE text there. query = window/program name to focus. parameter = the text to type. If the user wants to SEND/SUBMIT the message, ALWAYS append " and send" at the END of parameter. Keywords: "go to", "type in", "write in", "send to". NEVER use type_in with query="terminal" — use terminal_write instead.
   IMPORTANT for type_in: when user says "send" or "and send" ANYWHERE in the sentence, put " and send" at the END of parameter.
   CRITICAL: "send X", "send to X" at the START of a sentence = ALWAYS type_in, NEVER chain, NEVER chat.
@@ -148,7 +148,7 @@ media: parameter=play_pause/next/previous/stop
 window: parameter=close_explorer/minimize_all/show_desktop/snap_left/snap_right/move_monitor/minimize/restore/close_all/nudge_up/nudge_down/nudge_left/nudge_right(append pixels). query=program name when needed
 screen_read: OCR window. query=window, parameter=what to look for
 terminal_read: read Lily's integrated terminal output. parameter=what to look for (optional). Keywords: "read the terminal", "what's on the terminal", "terminal output"
-terminal_write: write/send text in Lily's integrated terminal. parameter=text VERBATIM, NEVER append "and send". Keywords: "write in terminal", "send to terminal". ALWAYS use this when user says "terminal" + write, NEVER type_in.
+terminal_write: write/send text in Lily's integrated terminal. parameter=ALL text after trigger VERBATIM, copy ENTIRE message, do NOT cut/filter. NEVER append "and send". Keywords: "write in terminal", "send to terminal". ALWAYS use this when user says "terminal" + write, NEVER type_in.
 type_in: go to EXTERNAL window+type. query=window, parameter=text VERBATIM. "send" anywhere->append " and send" at END. No text after app->parameter="dictate". NEVER use with query="terminal".
 time: current time/date
 dictation: voice typing. "write [TEXT]"->query=TEXT
@@ -724,6 +724,9 @@ STRINGS = {
     "settings_log_enabled": "Show log page",
     "settings_terminal_enabled": "Enable integrated terminal",
     "settings_memory_enabled": "Show memory page",
+    "settings_wake_word_enabled": "Enable Wake Word",
+    "settings_wake_keyword": "Keyword",
+    "settings_wake_sensitivity": "Sensitivity",
     "settings_save": "Save",
     "settings_saved": "Saved!",
     "settings_browse_es": "Select es.exe",
@@ -733,6 +736,8 @@ STRINGS = {
     # ── AI Hints (setting tooltips) ──────────────────────────────────────
     "ai_hint_hotkey": "The key (or combo) to hold\nto activate voice recording.\nExamples: caps lock, ctrl+shift+space, f5",
     "ai_hint_hotkey_suppress": "When enabled, the hotkey is consumed by Lily\nand not forwarded to other apps.\nUseful if you use a letter or F-key:\nprevents it from being typed repeatedly\nwhile you hold it to record.",
+    "ai_hint_wake_word": "Activate voice recognition without a hotkey.\nSay the keyword and Lily starts listening.\nUses Silero VAD + Whisper tiny in background.",
+    "ai_hint_wake_keyword": "The word that activates Lily.\nWhen speech is detected, transcribes\na short fragment and checks if it starts\nwith this word.",
     "ai_hint_overlay": "Shows a floating icon on screen\nwhen Lily is minimized.\nLets you see the state (idle, listening, processing)\nwithout opening the window.",
     "ai_hint_whisper_model": "Speech recognition model.\ntiny/base = fast but less accurate\nmedium = good tradeoff\nlarge-v3 = best accuracy, slower.\nLarger models need more VRAM.",
     "ai_hint_whisper_device": "Device for speech recognition.\ncuda = use NVIDIA GPU (fast)\ncpu = use processor (slower, no GPU needed)",

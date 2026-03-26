@@ -124,6 +124,32 @@ class SettingsPage(QWidget):
         form.addWidget(general_card)
         form.addSpacing(8)
 
+        # ── Card: Wake Word ──────────────────────────────────────
+        form.addWidget(_section_title("Wake Word"))
+        form.addSpacing(4)
+
+        wake_card = GlassCard()
+        wc = wake_card.body()
+        wc.setSpacing(10)
+
+        self._wake_word_enabled = QCheckBox(t("settings_wake_word_enabled"))
+        self._wake_word_enabled.setChecked(getattr(config, "wake_word_enabled", False))
+        wc.addLayout(_check_row(self._wake_word_enabled, t("ai_hint_wake_word")))
+
+        self._wake_keyword = QLineEdit(getattr(config, "wake_word_keyword", "lily"))
+        self._wake_keyword.setPlaceholderText("lily")
+        wc.addLayout(_row(t("settings_wake_keyword"), self._wake_keyword, t("ai_hint_wake_keyword")))
+
+        sens = int(getattr(config, "wake_word_sensitivity", 0.5) * 100)
+        sens_row, self._wake_sensitivity, _ = _slider_row(
+            t("settings_wake_sensitivity"), 10, 100, sens,
+            fmt=lambda v: f"{v}%",
+        )
+        wc.addLayout(sens_row)
+
+        form.addWidget(wake_card)
+        form.addSpacing(8)
+
         # ── Card: Audio ───────────────────────────────────────────
         form.addWidget(_section_title(t("settings_audio")))
         form.addSpacing(4)
@@ -330,6 +356,9 @@ class SettingsPage(QWidget):
         self._language.currentIndexChanged.connect(self._check_dirty)
         self._hotkey.textChanged.connect(self._check_dirty)
         self._hotkey_suppress.toggled.connect(self._check_dirty)
+        self._wake_word_enabled.toggled.connect(self._check_dirty)
+        self._wake_keyword.textChanged.connect(self._check_dirty)
+        self._wake_sensitivity.valueChanged.connect(self._check_dirty)
         self._overlay_enabled.toggled.connect(self._check_dirty)
         self._whisper.currentTextChanged.connect(self._check_dirty)
         self._whisper_device.currentTextChanged.connect(self._check_dirty)
@@ -362,6 +391,9 @@ class SettingsPage(QWidget):
             self._log_enabled.isChecked(),
             self._terminal_enabled.isChecked(),
             self._memory_enabled.isChecked(),
+            self._wake_word_enabled.isChecked(),
+            self._wake_keyword.text().strip(),
+            self._wake_sensitivity.value(),
         )
 
     def _check_dirty(self):
@@ -416,6 +448,9 @@ class SettingsPage(QWidget):
         self._config.log_enabled = self._log_enabled.isChecked()
         self._config.terminal_enabled = self._terminal_enabled.isChecked()
         self._config.memory_enabled = self._memory_enabled.isChecked()
+        self._config.wake_word_enabled = self._wake_word_enabled.isChecked()
+        self._config.wake_word_keyword = self._wake_keyword.text().strip() or "lily"
+        self._config.wake_word_sensitivity = self._wake_sensitivity.value() / 100.0
         self._config.save()
 
         self.log_toggled.emit(self._log_enabled.isChecked())
@@ -425,6 +460,7 @@ class SettingsPage(QWidget):
         self._assistant.apply_config()
         # Ri-registra hotkey se cambiato tasto o suppress
         self._assistant.update_hotkey()
+        self._assistant.update_wake_word()
 
         self._snapshot = self._take_snapshot()
         self.dirty_changed.emit(False)
