@@ -43,5 +43,4 @@ class TerminalWriteAction(Action):
             return t("terminal_write_no_session")
 
         tab_label = terminal_buffer.get_label(tab_id) if tab_id else "attivo"
-        print(f"[TerminalWrite] Scritto nel tab {tab_label}: {text[:80]}")
         return t("terminal_write_ok", tab=tab_label)

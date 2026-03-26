@@ -278,7 +278,7 @@ class Assistant:
 
         self._last_mode = "classify"
         provider = self.config.provider
-        model = self.config.anthropic_model if provider == "anthropic" else self.config.ollama_model
+        model = getattr(self.config, f"{provider}_model", self.config.ollama_model)
         print(f"[LLM] Invio a {model} ({provider})...")
         self.detail.emit("Classificazione intent...")
         try:

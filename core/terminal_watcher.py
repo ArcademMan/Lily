@@ -80,14 +80,10 @@ class TerminalWatcher:
         """Inizia a monitorare un tab."""
         initial_total = terminal_buffer.get_total_lines(tab_id)
         self._tabs[tab_id] = _TabState(initial_total)
-        print(f"[Watcher] Monitoring tab: {tab_id} ({terminal_buffer.get_label(tab_id)}) initial_total={initial_total}")
         if not self._thread or not self._thread.is_alive():
             self._stop.clear()
             self._thread = threading.Thread(target=self._poll_loop, daemon=True)
             self._thread.start()
-            print(f"[Watcher] Thread avviato")
-        else:
-            print(f"[Watcher] Thread gia' attivo")
         self.on_state_changed.emit(tab_id, True)
 
     def unwatch(self, tab_id: str):
@@ -95,7 +91,6 @@ class TerminalWatcher:
         self._tabs.pop(tab_id, None)
         if not self._tabs:
             self._stop.set()
-        print(f"[Watcher] Stop monitoring tab: {tab_id}")
         self.on_state_changed.emit(tab_id, False)
 
     def unwatch_all(self):
@@ -108,12 +103,10 @@ class TerminalWatcher:
         return bool(self._tabs)
 
     def _poll_loop(self):
-        print(f"[Watcher] Poll loop avviato, tabs: {list(self._tabs.keys())}")
         while not self._stop.is_set():
             for tab_id in list(self._tabs.keys()):
                 self._check_tab(tab_id)
             self._stop.wait(self._poll_interval)
-        print("[Watcher] Poll loop terminato")
 
     def _check_tab(self, tab_id: str):
         state = self._tabs.get(tab_id)
@@ -128,7 +121,6 @@ class TerminalWatcher:
             return
 
         new_count = total - state.last_seen
-        print(f"[Watcher] {tab_id}: {new_count} nuove righe (totale: {total})")
 
         text = terminal_buffer.get_text(tab_id=tab_id, max_lines=new_count)
         new_lines = text.splitlines()
@@ -146,19 +138,16 @@ class TerminalWatcher:
 
             if self._match_any(stripped, _CONFIRM_PATTERNS):
                 if self._can_trigger("confirm", tab_id):
-                    print(f"[Watcher] Conferma in {tab_label}: {stripped[:80]}")
                     self.on_confirm.emit(tab_label, stripped)
                 return
 
             if self._match_any(stripped, _DONE_PATTERNS):
                 if self._can_trigger("done", tab_id):
-                    print(f"[Watcher] Completato in {tab_label}")
                     self.on_done.emit(tab_label)
                 return
 
             if self._match_any(stripped, _ERROR_PATTERNS):
                 if self._can_trigger("error", tab_id):
-                    print(f"[Watcher] Errore in {tab_label}: {stripped[:80]}")
                     self.on_error.emit(tab_label, stripped)
                 return
 

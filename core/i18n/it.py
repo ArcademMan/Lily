@@ -60,7 +60,8 @@ TYPE must be one of:
   Keywords: "chiudi le cartelle", "minimizza tutto", "mostra desktop", "sposta a sinistra/destra", "sposta sull'altro schermo", "ripristina", "minimizza", "più in alto", "più in basso", "più a sinistra", "più a destra"
 - screen_read: user wants to READ/SEE what's on a window or screen. Captures the window and reads the text via OCR. query = window/program name. parameter = what to look for or question about the content. Keywords: "leggi", "cosa c'è scritto", "leggimi", "cosa vedi su", "ultimo messaggio", "cosa dice"
 - terminal_read: user wants to READ the output of Lily's INTEGRATED TERMINAL (the terminal tab inside Lily). No need for a window name. parameter = what to look for (optional). Keywords: "leggi il terminale", "cosa c'è sul terminale", "output del terminale", "cosa dice il terminale". IMPORTANT: use this ONLY when the user refers to Lily's own terminal, NOT external terminal windows.
-- type_in: user wants to GO TO a specific window and optionally TYPE text there. query = window/program name to focus. parameter = the text to type. If the user wants to SEND/SUBMIT the message, ALWAYS append " e invia" at the END of parameter. Keywords: "vai su", "vai sul", "scrivi su", "scrivi nel", "scrivi a", "digita su", "invia a/su"
+- terminal_write: user wants to WRITE/SEND text in Lily's INTEGRATED TERMINAL. parameter = text to write VERBATIM. NEVER append "e invia" — enter is pressed automatically. Keywords: "scrivi sul terminale", "scrivi nel terminale", "invia sul terminale", "invia nel terminale", "manda al terminale". IMPORTANT: when user says "terminale" and wants to WRITE there, ALWAYS use terminal_write NOT type_in.
+- type_in: user wants to GO TO a specific EXTERNAL window and optionally TYPE text there. query = window/program name to focus. parameter = the text to type. If the user wants to SEND/SUBMIT the message, ALWAYS append " e invia" at the END of parameter. Keywords: "vai su", "vai sul", "scrivi su", "scrivi nel", "scrivi a", "digita su", "invia a/su". NEVER use type_in with query="terminale" — use terminal_write instead.
   IMPORTANT for type_in: when user says "invia" or "e invia" ANYWHERE in the sentence, put " e invia" at the END of parameter.
   CRITICAL: "invia X", "invia su X", "invia a X" at the START of a sentence = ALWAYS type_in, NEVER chain, NEVER chat. The app name follows "invia" directly or after "su/a".
   CRITICAL: parameter must contain ALL the text after the app name, VERBATIM. Do NOT summarize, cut, or rephrase. Copy the ENTIRE message exactly as the user said it.
@@ -118,7 +119,9 @@ Examples:
 - "leggi il terminale" -> {"intent": "terminal_read", "query": "", "search_terms": [], "parameter": ""}
 - "cosa c'è sul terminale" -> {"intent": "terminal_read", "query": "", "search_terms": [], "parameter": ""}
 - "cosa dice il terminale, ci sono errori?" -> {"intent": "terminal_read", "query": "", "search_terms": [], "parameter": "errori"}
-- "vai sul terminale e scrivi ciao e invia" -> {"intent": "type_in", "query": "terminale", "search_terms": [], "parameter": "ciao e invia"}
+- "scrivi sul terminale ciao" -> {"intent": "terminal_write", "query": "", "search_terms": [], "parameter": "ciao"}
+- "invia sul terminale ok diciamo quindi" -> {"intent": "terminal_write", "query": "", "search_terms": [], "parameter": "ok diciamo quindi"}
+- "vai sul terminale e scrivi ciao e invia" -> {"intent": "terminal_write", "query": "", "search_terms": [], "parameter": "ciao"}
 - "vai su Sublime" -> {"intent": "type_in", "query": "Sublime", "search_terms": [], "parameter": ""}
 - "invia a WhatsApp questo messaggio è da Lily" -> {"intent": "type_in", "query": "WhatsApp", "search_terms": [], "parameter": "questo messaggio è da Lily e invia"}
 - "invia su WhatsApp" -> {"intent": "type_in", "query": "WhatsApp", "search_terms": [], "parameter": "dictate"}
@@ -158,7 +161,8 @@ media: parameter=play_pause/next/previous/stop
 window: parameter=close_explorer/minimize_all/show_desktop/snap_left/snap_right/move_monitor/move_monitor N(specific monitor)/minimize/restore/close_all/nudge_up/nudge_down/nudge_left/nudge_right(append pixels). query=program name when needed. "schermo 1"/"primo schermo"->move_monitor 1
 screen_read: OCR window. query=window, parameter=what to look for
 terminal_read: read Lily's integrated terminal output. parameter=what to look for (optional). Keywords: "leggi il terminale", "cosa c'è sul terminale", "output del terminale"
-type_in: go to window+type. query=window, parameter=text VERBATIM. "invia" anywhere->append " e invia" at END. No text after app->parameter="dictate"
+terminal_write: write/send text in Lily's integrated terminal. parameter=text VERBATIM, NEVER append "e invia". Keywords: "scrivi sul terminale", "invia sul terminale". ALWAYS use this when user says "terminale" + write, NEVER type_in.
+type_in: go to EXTERNAL window+type. query=window, parameter=text VERBATIM. "invia" anywhere->append " e invia" at END. No text after app->parameter="dictate". NEVER use with query="terminale".
 time: current time/date
 dictation: voice typing. "scrivi [TEXT]"->query=TEXT
 self_config: change settings. query=setting(voce/tts/hotkey/thinking/token/storico), parameter=new value
@@ -181,7 +185,8 @@ Examples:
 "metti Chrome sul secondo monitor"->{"intent":"window","query":"Chrome","parameter":"move_monitor 2"}
 "leggimi il contenuto del file bananefunghi"->{"intent":"agent","query":"leggimi il contenuto del file bananefunghi"}
 "leggimi l'ultimo messaggio su WhatsApp"->{"intent":"screen_read","query":"WhatsApp","parameter":"ultimo messaggio"}
-"vai sul terminale e scrivi ciao e invia"->{"intent":"type_in","query":"terminale","parameter":"ciao e invia"}
+"scrivi sul terminale ciao"->{"intent":"terminal_write","parameter":"ciao"}
+"invia sul terminale ok diciamo quindi"->{"intent":"terminal_write","parameter":"ok diciamo quindi"}
 "invia su WhatsApp"->{"intent":"type_in","query":"WhatsApp","parameter":"dictate"}
 "cos'è la fotosintesi?"->{"intent":"chat","query":"cos'è la fotosintesi?"}
 "ricordami tra 30m di controllare il forno"->{"intent":"timer","query":"controllare il forno","parameter":"30m"}
@@ -250,7 +255,7 @@ def _chain_prompt() -> str:
 Reply with ONLY a JSON array of intent objects:
 [{{"intent":"TYPE","query":"...","search_terms":[...],"parameter":"..."}}, ...]
 
-Available intents: open_program, close_program, open_folder, open_website, search_files, screenshot, timer, volume, media, window, screen_read, type_in, time, notes, system_info.
+Available intents: open_program, close_program, open_folder, open_website, search_files, screenshot, timer, volume, media, window, screen_read, type_in, terminal_read, terminal_write, time, notes, system_info.
 
 Rules:
 - Each step is an independent action that Lily can execute
