@@ -45,23 +45,8 @@ class ScreenReadAction(Action):
             return t("screen_read_capture_error")
 
         try:
-            # OCR
-            tesseract_path = getattr(config, "tesseract_path", "tesseract")
-            print(f"[ScreenRead] OCR in corso...")
-            ocr_text = ocr_image(image_path, tesseract_path)
-
-            if not ocr_text:
-                return t("screen_read_ocr_empty", query=query)
-
-            print(f"[ScreenRead] Testo OCR ({len(ocr_text)} chars): {ocr_text[:200]}...")
-
-            # Usa l'LLM per interpretare/riassumere quello che ha letto
-            # in base a cosa l'utente ha chiesto
-            prompt = t_prompt("screen_read_prompt", window=query,
-                              ocr_text=ocr_text[:2000], user_request=original_text)
-
             from core.llm import get_provider
-            from core.llm.brain import _strip_think_tags, _apply_thinking
+            from core.llm.brain import _strip_think_tags, _apply_thinking, _get_model
             from core.llm.prompts import get_chat_system_prompt
 
             provider = get_provider(config)
@@ -70,19 +55,58 @@ class ScreenReadAction(Action):
             if not thinking:
                 system_prompt = _apply_thinking(system_prompt, config)
 
-            from core.llm.brain import _get_model
-            raw = provider.chat(
-                model=_get_model(config),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt},
-                ],
-                format_json=False,
-                temperature=0.5,
-                num_predict=getattr(config, "chat_num_predict", 384),
-                timeout=30,
-                thinking=thinking,
-            )
+            use_vision = getattr(config, "provider", "ollama") == "openai"
+
+            if use_vision:
+                # Vision: manda lo screenshot direttamente al modello
+                print(f"[ScreenRead] Vision mode: invio immagine a OpenAI")
+                vision_prompt = (
+                    f"Finestra: {query}\n"
+                    f"Richiesta utente: {original_text}\n"
+                    f"Descrivi cosa vedi nello screenshot e rispondi alla richiesta"
+                )
+                if parameter:
+                    vision_prompt += f"\nCerca in particolare: {parameter}"
+
+                raw = provider.chat(
+                    model=_get_model(config),
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": vision_prompt, "images": [image_path]},
+                    ],
+                    format_json=False,
+                    temperature=0.5,
+                    num_predict=getattr(config, "chat_num_predict", 384),
+                    timeout=30,
+                    thinking=thinking,
+                )
+            else:
+                # Fallback OCR per provider senza vision
+                tesseract_path = getattr(config, "tesseract_path", "tesseract")
+                print(f"[ScreenRead] OCR in corso...")
+                ocr_text = ocr_image(image_path, tesseract_path)
+
+                if not ocr_text:
+                    return t("screen_read_ocr_empty", query=query)
+
+                print(f"[ScreenRead] Testo OCR ({len(ocr_text)} chars): {ocr_text[:200]}...")
+
+                prompt = t_prompt("screen_read_prompt", window=query,
+                                  ocr_text=ocr_text[:2000], user_request=original_text)
+
+                raw = provider.chat(
+                    model=_get_model(config),
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    format_json=False,
+                    temperature=0.5,
+                    num_predict=getattr(config, "chat_num_predict", 384),
+                    timeout=30,
+                    thinking=thinking,
+                )
+
             response = _strip_think_tags(raw).strip()
             return response if response else t("screen_read_llm_error")
 

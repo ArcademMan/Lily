@@ -1,9 +1,27 @@
+import base64
 import json
 import requests
 
 from core.llm.base_provider import LLMProvider, retry_on_transient
 
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+
+
+def _build_message(m: dict) -> dict:
+    """Costruisce un messaggio OpenAI, con supporto vision se presente 'images'."""
+    images = m.get("images", [])
+    if not images:
+        return {"role": m["role"], "content": m["content"]}
+
+    content = [{"type": "text", "text": m["content"]}]
+    for img_path in images:
+        with open(img_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "low"},
+        })
+    return {"role": m["role"], "content": content}
 
 
 class OpenAIProvider(LLMProvider):
@@ -35,7 +53,7 @@ class OpenAIProvider(LLMProvider):
             "model": use_model,
             "max_completion_tokens": num_predict,
             "temperature": temperature,
-            "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
+            "messages": [_build_message(m) for m in messages],
         }
         if format_json:
             payload["response_format"] = {"type": "json_object"}
